@@ -4,6 +4,8 @@ import { Timestamp } from 'firebase-admin/firestore'
 
 admin.initializeApp()
 
+export { getInstructorSession } from './getInstructorSession'
+export { getRoster } from './getRoster'
 export { triggerMatching } from './triggerMatching'
 export { submitLeadOutcome } from './submitLeadOutcome'
 export { submitConfirmation } from './submitConfirmation'
