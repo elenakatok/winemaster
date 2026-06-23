@@ -90,6 +90,12 @@ export const getInstructorSession = (args: InstructorSessionArgs) =>
   callFunction<{ ok: boolean; customToken: string }>('getInstructorSession', args)
 
 /** All remaining instructor calls are gated on the Firebase Bearer session. */
+export const syncRoster = () =>
+  callFunctionWithSession<{ ok: boolean; synced: number; skipped: number }>('syncRoster', {})
+
+export const generateAttendanceCode = () =>
+  callFunctionWithSession<{ ok: boolean; code: string }>('generateAttendanceCode', {})
+
 export const getRoster = () =>
   callFunctionWithSession<{ ok: boolean; participants: RosterParticipant[]; groups: RosterGroup[] }>('getRoster', {})
 

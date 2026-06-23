@@ -4,6 +4,8 @@ import { signInWithCustomToken, signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import {
   getInstructorSession,
+  syncRoster,
+  generateAttendanceCode,
   getRoster,
   triggerMatching,
   finalizeInstance,
@@ -278,8 +280,42 @@ export default function InstructorDashboard() {
   }
 
   useEffect(() => {
-    if (sessionReady) loadRoster()
+    if (!sessionReady) return
+    ;(async () => {
+      try { await syncRoster() } catch { /* non-fatal: self-joined students still show */ }
+      loadRoster()
+    })()
   }, [sessionReady]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Attendance code ───────────────────────────────────────────────
+  const [attendanceCode,  setAttendanceCode]  = useState<string | null>(null)
+  const [generating,      setGenerating]      = useState(false)
+  const [codeError,       setCodeError]       = useState<string | null>(null)
+
+  const handleGenerate = () => {
+    setGenerating(true); setCodeError(null)
+    generateAttendanceCode()
+      .then(r => { setAttendanceCode(r.code); setGenerating(false) })
+      .catch((err: unknown) => {
+        setCodeError(err instanceof Error ? err.message : 'Failed to generate code.')
+        setGenerating(false)
+      })
+  }
+
+  const projectCode = () => {
+    if (!attendanceCode) return
+    const w = window.open('', 'wm-code-projection', 'width=960,height=540,menubar=no,toolbar=no,location=no,status=no')
+    if (!w) return
+    w.document.write(
+      `<!doctype html><html><head><title>Attendance Code</title>` +
+      `<style>body{margin:0;display:flex;flex-direction:column;align-items:center;` +
+      `justify-content:center;height:100vh;background:#1a0a06;color:#f7f3ef;` +
+      `font-family:monospace;text-align:center;}p{font-size:1.25rem;opacity:.7;margin:0 0 1rem;}` +
+      `h1{font-size:8rem;font-weight:700;letter-spacing:.3em;margin:0;}</style></head>` +
+      `<body><p>Attendance Code</p><h1>${attendanceCode}</h1></body></html>`,
+    )
+    w.document.close()
+  }
 
   // ── Trigger Matching ──────────────────────────────────────────────
   const [matching,     setMatching]     = useState(false)
@@ -412,6 +448,50 @@ export default function InstructorDashboard() {
             Actions
           </p>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+
+            {/* Generate Attendance Code */}
+            <div>
+              {attendanceCode ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontFamily:    C.mono,
+                    fontWeight:    700,
+                    fontSize:      '1.5rem',
+                    letterSpacing: '0.25em',
+                    color:         C.accent,
+                    background:    '#f9f0ec',
+                    padding:       '0.2rem 0.6rem',
+                    borderRadius:  4,
+                    border:        `1px solid ${C.border}`,
+                  }}>
+                    {attendanceCode}
+                  </span>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={generating}
+                    title="Regenerate — invalidates the current code"
+                    style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', cursor: generating ? 'not-allowed' : 'pointer' }}
+                  >
+                    {generating ? '…' : '↻'}
+                  </button>
+                  <button
+                    onClick={projectCode}
+                    title="Open code in a projectable full-screen window"
+                    style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}
+                  >
+                    Project
+                  </button>
+                </div>
+              ) : (
+                <ActionButton
+                  label={generating ? 'Generating…' : 'Generate Code'}
+                  onClick={handleGenerate}
+                  disabled={generating || !sessionReady}
+                  variant="primary"
+                />
+              )}
+              {codeError && <ResultLine text={codeError} isError />}
+            </div>
 
             {/* Trigger Matching */}
             <div>
