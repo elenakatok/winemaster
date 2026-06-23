@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
 import { submitLeadOutcome, submitConfirmation, type CallArgs } from '../api'
+import { labelFor } from '@mygames/game-engine/roles'
 import {
+  winemasterConfig,
   winemasterSchema,
-  labelFor,
   FIELD_LABELS,
   formatField,
-  type FieldDef,
+  type OutcomeField as FieldDef,
 } from '../gameConfig'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -64,10 +65,10 @@ function parseForm(values: FormValues): ParseOk | ParseErr {
       if (raw === '' || isNaN(n) || !Number.isInteger(n)) {
         return { ok: false, error: `${lbl} is required.` }
       }
-      if (n < field.min || n > field.max) {
+      if ((field.min !== undefined && n < field.min) || (field.max !== undefined && n > field.max)) {
         return {
           ok: false,
-          error: `${lbl} must be between ${field.min.toLocaleString()} and ${field.max.toLocaleString()}.`,
+          error: `${lbl} must be between ${(field.min ?? 0).toLocaleString()} and ${(field.max ?? 0).toLocaleString()}.`,
         }
       }
       outcome[field.key] = n
@@ -110,7 +111,7 @@ function SchemaField({
           style={inputStyle}
         />
         <span style={{ fontSize: '0.8rem', color: '#888' }}>
-          {field.min.toLocaleString()} – {field.max.toLocaleString()}
+          {(field.min ?? 0).toLocaleString()} – {(field.max ?? 0).toLocaleString()}
         </span>
       </div>
     )
@@ -270,7 +271,7 @@ export default function OutcomeReporting({
   const resetCount = groupData.reset_count ?? 0
 
   const roleKey   = groupData.winemaster_participants.includes(participantId) ? 'winemaster' : 'home_base'
-  const roleLabel = labelFor(roleKey)
+  const roleLabel = labelFor(winemasterConfig, roleKey)
 
   const confirmedCount = Object.values(confirmations ?? {}).filter(v => v === 'confirmed').length
   const totalCount     = Object.keys(confirmations ?? {}).length

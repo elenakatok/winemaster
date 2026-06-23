@@ -1,10 +1,16 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from './firebase'
 import OutcomeReporting from './phases/OutcomeReporting'
+import InstructorDashboard from './pages/InstructorDashboard'
+import Configure from './pages/Configure'
 import type { CallArgs } from './api'
 
-// Dev-mode route resolved from ?gameId=&pid= via participant doc lookup.
+// ── Student participant entry at / ────────────────────────────────────────────
+// Dev: ?gameId=&pid= query params resolve the participant and render the outcome
+// form directly. Production participant flow is a future slice.
+
 type DevRoute = {
   gameId:  string
   pid:     string
@@ -13,7 +19,7 @@ type DevRoute = {
   args:    CallArgs
 }
 
-export default function App() {
+function Play() {
   const [devRoute, setDevRoute] = useState<DevRoute | null>(null)
   const [loading,  setLoading]  = useState(false)
 
@@ -67,5 +73,19 @@ export default function App() {
       <h1>Winemaster</h1>
       <p>Coming soon.</p>
     </div>
+  )
+}
+
+// ── Router ────────────────────────────────────────────────────────────────────
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/"          element={<Play />} />
+        <Route path="/dashboard" element={<InstructorDashboard />} />
+        <Route path="/configure" element={<Configure />} />
+      </Routes>
+    </BrowserRouter>
   )
 }
