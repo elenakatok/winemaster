@@ -5,6 +5,8 @@ import { Timestamp } from 'firebase-admin/firestore'
 admin.initializeApp()
 
 export { triggerMatching } from './triggerMatching'
+export { submitLeadOutcome } from './submitLeadOutcome'
+export { submitConfirmation } from './submitConfirmation'
 
 const CORS_ORIGINS = new Set(['https://winemaster.mygames.live'])
 
@@ -84,4 +86,99 @@ export const seedMatchTest = onRequest(async (req, res) => {
   await rtdb.ref(`presence/${gameInstanceId}`).set(presenceData)
 
   res.json({ ok: true, seeded: participants.length })
+})
+
+// Emulator-only: seed a matched group directly (bypass triggerMatching) for B4a outcome tests.
+// Creates participant docs with group_id/is_lead stamped and a group doc in 'matched' state.
+export const seedGroupForTest = onRequest(async (req, res) => {
+  if (process.env.FUNCTIONS_EMULATOR !== 'true') {
+    res.status(404).json({ error: 'Not found' })
+    return
+  }
+  if (req.method !== 'POST') {
+    res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
+
+  const body = req.body as {
+    game_instance_id?: unknown
+    group_id?: unknown
+    lead_id?: unknown
+    winemaster_participants?: unknown
+    home_base_participants?: unknown
+  }
+
+  if (typeof body.game_instance_id !== 'string' || !body.game_instance_id) {
+    res.status(400).json({ error: 'game_instance_id required' }); return
+  }
+  if (typeof body.group_id !== 'string' || !body.group_id) {
+    res.status(400).json({ error: 'group_id required' }); return
+  }
+  if (typeof body.lead_id !== 'string' || !body.lead_id) {
+    res.status(400).json({ error: 'lead_id required' }); return
+  }
+  if (!Array.isArray(body.winemaster_participants) || !Array.isArray(body.home_base_participants)) {
+    res.status(400).json({ error: 'winemaster_participants and home_base_participants arrays required' }); return
+  }
+
+  const gameInstanceId = body.game_instance_id
+  const groupId = body.group_id
+  const leadId = body.lead_id
+  const winemasterPids = body.winemaster_participants as string[]
+  const homeBasePids = body.home_base_participants as string[]
+
+  const db = admin.firestore()
+  const instanceRef = db.collection('game_instances').doc(gameInstanceId)
+  const now = Timestamp.now()
+
+  // Clear any existing state for this game instance.
+  const [existingPs, existingGs] = await Promise.all([
+    instanceRef.collection('participants').get(),
+    instanceRef.collection('groups').get(),
+  ])
+  if (existingPs.size > 0 || existingGs.size > 0) {
+    const clearBatch = db.batch()
+    for (const d of existingPs.docs) clearBatch.delete(d.ref)
+    for (const d of existingGs.docs) clearBatch.delete(d.ref)
+    await clearBatch.commit()
+  }
+
+  // Write group doc.
+  const groupRef = instanceRef.collection('groups').doc(groupId)
+  await groupRef.set({
+    group_id: groupId,
+    game_instance_id: gameInstanceId,
+    winemaster_participants: winemasterPids,
+    home_base_participants: homeBasePids,
+    lead_participant_id: leadId,
+    outcome: null,
+    status: 'matched',
+    matched_at: now,
+  })
+
+  // Write participant docs.
+  const batch = db.batch()
+  for (const pid of winemasterPids) {
+    batch.set(instanceRef.collection('participants').doc(pid), {
+      participant_id: pid,
+      game_instance_id: gameInstanceId,
+      role: 'winemaster',
+      group_id: groupId,
+      is_lead: pid === leadId,
+      attendance_confirmed_at: now,
+    })
+  }
+  for (const pid of homeBasePids) {
+    batch.set(instanceRef.collection('participants').doc(pid), {
+      participant_id: pid,
+      game_instance_id: gameInstanceId,
+      role: 'home_base',
+      group_id: groupId,
+      is_lead: false,
+      attendance_confirmed_at: now,
+    })
+  }
+  await batch.commit()
+
+  res.json({ ok: true, group_id: groupId, lead_id: leadId })
 })
