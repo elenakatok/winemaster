@@ -7,7 +7,7 @@ export type BooleanField = { key: string; type: 'boolean' }
 export type FieldDef     = IntegerField | EnumField | BooleanField
 
 export const winemasterSchema: readonly FieldDef[] = [
-  { key: 'shares',     type: 'integer', min: 0,   max: 100_000  },
+  { key: 'shares',     type: 'integer', min: 0,   max: 500_000  },
   { key: 'vesting',    type: 'enum',    options: ['Immediate', 'Pro Rata', 'End of Second Year'] },
   { key: 'board_seat', type: 'boolean' },
   { key: 'liability',  type: 'integer', min: 0,   max: 1_000_000 },
