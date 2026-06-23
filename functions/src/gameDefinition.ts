@@ -1,4 +1,5 @@
 import type { Outcome, OutcomeSchema, RoleConfig } from '@mygames/game-engine'
+import type { GameDefinition } from '@mygames/game-server'
 
 // ── Role config ───────────────────────────────────────────────────────────────
 
@@ -79,6 +80,29 @@ export function computeRawScore(roleKey: string, outcome: Outcome | null): numbe
     // H = 8,400,000 − (S·50·m_H(V) + (B ? 350,000 : 0) + liab_H(L))
     return 8_400_000 - Math.round(S * 50 * M_H[V] + (B ? 350_000 : 0) + liabH(L))
   }
+}
+
+// ── GameDefinition (full contract for game-server factories) ─────────────────
+
+export const winemasterGameDef: GameDefinition = {
+  game_id: 'winemaster',
+  roles:   winemasterConfig,
+  scoreSense: winemasterScoreSense,
+  composition: { winemaster: 2, home_base: 2 },
+  outcomeSchema: winemasterSchema,
+  computeRawScore,
+  reservations: { winemaster: 7_200_000, home_base: 8_400_000 },
+  corsOrigins: ['https://winemaster.mygames.live'],
+  classroom: { callbackSecretId: 'CLASSROOM_CALLBACK_SECRET' },
+  // perRoleCap omitted → factory uses eligible.length (no cap, place every extra).
+  // deadlockThreshold omitted → factory defaults to 5 (Winemaster's value).
+  // BU-phase: content fields not used by backend factories; populated in BU slices.
+  content: {
+    infoPDFs:      {} as Record<string, { private: string; public?: string }>,
+    kcQuestions:   [],
+    prepQuestions: [],
+    scenarioText:  {},
+  },
 }
 
 // ── Frozen conformance test vector (spreadsheet-verified ground truth) ────────
