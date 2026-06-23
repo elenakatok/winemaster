@@ -1,8 +1,19 @@
-import { auth } from './firebase'
+import { httpsCallable } from 'firebase/functions'
+import { FirebaseError } from 'firebase/app'
+import { functions } from './firebase'
 
-const FUNCTIONS_BASE = import.meta.env.DEV
-  ? 'http://127.0.0.1:5005/winemaster-mygames-live/us-central1'
-  : 'https://us-central1-winemaster-mygames-live.cloudfunctions.net'
+// ── Helper ────────────────────────────────────────────────────────────────────
+// Single wrapper: the Firebase SDK auto-attaches the ID token Bearer when
+// auth.currentUser exists, and sends nothing when there is no session —
+// covering both bootstrap (getInstructorSession, assignRole) and authed calls.
+
+async function callFn<T>(name: string, data: object = {}): Promise<T> {
+  const fn = httpsCallable<object, T>(functions, name)
+  const result = await fn(data)
+  return result.data
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type TestArgs  = { _test: { participant_id: string; game_instance_id: string } }
 export type TokenArgs = { token: string }
@@ -12,46 +23,23 @@ export const CLASSROOM_URL = import.meta.env.DEV
   ? 'http://localhost:5173'
   : 'https://classroom.mygames.live'
 
+// onCall auth errors arrive as FirebaseError with code 'functions/permission-denied'
+// or 'functions/unauthenticated' — not HTTP status strings.
 export function isAuthError(err: unknown): boolean {
-  if (!(err instanceof Error)) return false
-  return err.message.includes('(401)') || err.message.includes('(403)')
-}
-
-async function callFunction<T>(name: string, body: object): Promise<T> {
-  const res = await fetch(`${FUNCTIONS_BASE}/${name}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const data = (await res.json()) as T & { error?: string }
-  if (!res.ok) throw new Error(`${data.error ?? name + ' failed'} (${res.status})`)
-  return data
-}
-
-export async function callFunctionWithSession<T>(name: string, body: object): Promise<T> {
-  const user = auth.currentUser
-  if (!user) throw new Error('No active session')
-  const idToken = await user.getIdToken()
-  const res = await fetch(`${FUNCTIONS_BASE}/${name}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify(body),
-  })
-  const data = (await res.json()) as T & { error?: string }
-  if (!res.ok) throw new Error(`${data.error ?? name + ' failed'} (${res.status})`)
-  return data
+  if (!(err instanceof FirebaseError)) return false
+  return (
+    err.code === 'functions/permission-denied' ||
+    err.code === 'functions/unauthenticated'
+  )
 }
 
 export type OutcomeFields = Record<string, unknown>
 
 export const submitLeadOutcome = (args: CallArgs, outcome: OutcomeFields | null) =>
-  callFunction<{ ok: boolean }>('submitLeadOutcome', { ...args, outcome })
+  callFn<{ ok: boolean }>('submitLeadOutcome', { ...args, outcome })
 
 export const submitConfirmation = (args: CallArgs, confirmed: boolean) =>
-  callFunction<{ ok: boolean; outcome: string }>('submitConfirmation', { ...args, confirmed })
+  callFn<{ ok: boolean; outcome: string }>('submitConfirmation', { ...args, confirmed })
 
 // ── Instructor API ────────────────────────────────────────────────────────────
 
@@ -85,25 +73,25 @@ export type PushSummary = {
   failed:    { participant_id: string; reason: string }[]
 }
 
-/** Bootstrap call — no session established yet; returns a Firebase custom token. */
+/** Bootstrap — no session yet; JWT travels in data; SDK attaches nothing. */
 export const getInstructorSession = (args: InstructorSessionArgs) =>
-  callFunction<{ ok: boolean; customToken: string }>('getInstructorSession', args)
+  callFn<{ ok: boolean; customToken: string }>('getInstructorSession', args)
 
-/** All remaining instructor calls are gated on the Firebase Bearer session. */
+/** Remaining instructor calls: SDK auto-attaches Firebase Bearer when session exists. */
 export const syncRoster = () =>
-  callFunctionWithSession<{ ok: boolean; synced: number; skipped: number }>('syncRoster', {})
+  callFn<{ ok: boolean; synced: number; skipped: number }>('syncRoster', {})
 
 export const generateAttendanceCode = () =>
-  callFunctionWithSession<{ ok: boolean; code: string }>('generateAttendanceCode', {})
+  callFn<{ ok: boolean; code: string }>('generateAttendanceCode', {})
 
 export const getRoster = () =>
-  callFunctionWithSession<{ ok: boolean; participants: RosterParticipant[]; groups: RosterGroup[] }>('getRoster', {})
+  callFn<{ ok: boolean; participants: RosterParticipant[]; groups: RosterGroup[] }>('getRoster', {})
 
 export const triggerMatching = () =>
-  callFunctionWithSession<{ ok: boolean; groups: unknown[]; alreadyMatched?: boolean }>('triggerMatching', {})
+  callFn<{ ok: boolean; groups: unknown[]; alreadyMatched?: boolean }>('triggerMatching', {})
 
 export const finalizeInstance = () =>
-  callFunctionWithSession<{ ok: boolean }>('finalizeInstance', {})
+  callFn<{ ok: boolean }>('finalizeInstance', {})
 
 export const pushResultsToClassroom = () =>
-  callFunctionWithSession<{ ok: boolean } & PushSummary>('pushResultsToClassroom', {})
+  callFn<{ ok: boolean } & PushSummary>('pushResultsToClassroom', {})
