@@ -55,17 +55,31 @@ function liabH(l: number): number {
     : 0.6 * (0.95 * 500000 + 0.05 * l)
 }
 
+// PROVISIONAL — home_base walk-away cost sentinel. Real no-deal payoff pending from Gary (B5).
+// Typical deal scores are 2–4M. At 1_000_000 this is LOWER than any real deal, so cost-sense
+// negation makes a walk-away HB score BETTER than deal HB — visibly wrong if it ships unreplaced.
+// Swap in Gary's value and add a conformance case; see swap-in checklist at bottom of file.
+export const WALKAWAY_HB_PLACEHOLDER = 1_000_000
+
 /**
  * Game-supplied scoring function. The library calls this; it never inspects the formula.
  *
  * Returns raw score (always positive for both roles; the library's sign convention
  * negates home_base before z-scoring — not here).
  *
- * Null outcome (walk-away / no deal) → 0 for both roles.
+ * Null outcome (walk-away / no deal) → PROVISIONAL values; see B5 notes.
  * Rounding: nearest dollar at the final step only.
  */
 export function computeRawScore(roleKey: string, outcome: Outcome | null): number {
-  if (outcome === null) return 0
+  if (outcome === null) {
+    // PROVISIONAL — walk-away raw payoff pending from Gary; see B5 notes.
+    if (roleKey === 'winemaster') {
+      return 0  // 0 = no value gained; plausibly worst on a value axis, but not domain-confirmed.
+    }
+    // home_base (cost-sense): 0 would be best possible cost — WRONG for a walk-away.
+    // Using WALKAWAY_HB_PLACEHOLDER so mis-scored data is visibly wrong, not plausibly wrong.
+    return WALKAWAY_HB_PLACEHOLDER
+  }
 
   const S = outcome['shares'] as number
   const V = outcome['vesting'] as VestingKey
@@ -89,6 +103,17 @@ export type ConformanceCase = {
   expectedW: number
   expectedH: number
 }
+
+// ── B5 walk-away swap-in checklist (once Gary provides real no-deal payoffs) ──────────────────
+// 1. Replace WALKAWAY_HB_PLACEHOLDER with Gary's home_base no-deal payoff (same file, above).
+// 2. If winemaster no-deal payoff ≠ 0, update the winemaster branch in computeRawScore (above).
+// 3. Add two new entries to CONFORMANCE_VECTOR below:
+//      { label: 'WalkawayW: outcome=null', outcome: null, expectedW: <Gary's value>, expectedH: N/A }
+//      { label: 'WalkawayH: outcome=null', outcome: null, expectedW: N/A, expectedH: <Gary's value> }
+//    (Or one combined case if both roles share a single no-deal payoff formula.)
+// 4. Re-run `npm test` in functions/ — conformance.test.ts and normalization.test.ts must both pass.
+// That's it. finalizeInstance.ts and the library need no changes.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
 
 export const CONFORMANCE_VECTOR: ConformanceCase[] = [
   {

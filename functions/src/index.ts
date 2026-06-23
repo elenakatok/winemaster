@@ -7,6 +7,7 @@ admin.initializeApp()
 export { triggerMatching } from './triggerMatching'
 export { submitLeadOutcome } from './submitLeadOutcome'
 export { submitConfirmation } from './submitConfirmation'
+export { finalizeInstance } from './finalizeInstance'
 
 const CORS_ORIGINS = new Set(['https://winemaster.mygames.live'])
 
