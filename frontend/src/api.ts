@@ -52,3 +52,52 @@ export const submitLeadOutcome = (args: CallArgs, outcome: OutcomeFields | null)
 
 export const submitConfirmation = (args: CallArgs, confirmed: boolean) =>
   callFunction<{ ok: boolean; outcome: string }>('submitConfirmation', { ...args, confirmed })
+
+// ── Instructor API ────────────────────────────────────────────────────────────
+
+export type InstructorSessionArgs =
+  | { token: string }
+  | { _dev: { game_instance_id: string } }
+
+export type RosterParticipant = {
+  participant_id: string
+  display_name:   string
+  role:           string | null
+  role_label:     string | null
+  group_id:       string | null
+  is_lead:        boolean | null
+  attended:       boolean
+  finalized:      boolean
+}
+
+export type RosterGroup = {
+  group_id:             string
+  status:               string
+  lead_participant_id:  string
+  participants_by_role: Record<string, string[]>
+  agreement_reached:    boolean | null
+  outcome:              Record<string, unknown> | null
+}
+
+export type PushSummary = {
+  total:     number
+  succeeded: number
+  failed:    { participant_id: string; reason: string }[]
+}
+
+/** Bootstrap call — no session established yet; returns a Firebase custom token. */
+export const getInstructorSession = (args: InstructorSessionArgs) =>
+  callFunction<{ ok: boolean; customToken: string }>('getInstructorSession', args)
+
+/** All remaining instructor calls are gated on the Firebase Bearer session. */
+export const getRoster = () =>
+  callFunctionWithSession<{ ok: boolean; participants: RosterParticipant[]; groups: RosterGroup[] }>('getRoster', {})
+
+export const triggerMatching = () =>
+  callFunctionWithSession<{ ok: boolean; groups: unknown[]; alreadyMatched?: boolean }>('triggerMatching', {})
+
+export const finalizeInstance = () =>
+  callFunctionWithSession<{ ok: boolean }>('finalizeInstance', {})
+
+export const pushResultsToClassroom = () =>
+  callFunctionWithSession<{ ok: boolean } & PushSummary>('pushResultsToClassroom', {})
