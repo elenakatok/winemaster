@@ -1,4 +1,5 @@
 import { onRequest } from 'firebase-functions/v2/https'
+import { defineSecret } from 'firebase-functions/params'
 import * as admin from 'firebase-admin'
 import { roleKeys } from '@mygames/game-engine'
 import { winemasterConfig } from './gameDefinition'
@@ -8,7 +9,11 @@ import { dispatchResults, type GameResult } from './engine/reportResult'
 const CORS_ORIGINS = new Set(['https://winemaster.mygames.live'])
 const VALID_ROLES = new Set(roleKeys(winemasterConfig))
 
-export const pushResultsToClassroom = onRequest(async (req, res) => {
+const classroomCallbackSecret = defineSecret('CLASSROOM_CALLBACK_SECRET')
+
+export const pushResultsToClassroom = onRequest(
+  { secrets: [classroomCallbackSecret] },
+  async (req, res) => {
   const origin = req.headers.origin ?? ''
   if (CORS_ORIGINS.has(origin)) {
     res.set('Access-Control-Allow-Origin', origin)
