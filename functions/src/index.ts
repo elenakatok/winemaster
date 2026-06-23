@@ -4,6 +4,11 @@ import { Timestamp } from 'firebase-admin/firestore'
 
 admin.initializeApp()
 
+export { syncRoster } from './syncRoster'
+export { assignRole } from './assignRole'
+export { completePrep } from './completePrep'
+export { confirmReady } from './confirmReady'
+export { generateAttendanceCode, verifyAttendanceCode } from './attendanceCode'
 export { getInstructorSession } from './getInstructorSession'
 export { getRoster } from './getRoster'
 export { triggerMatching } from './triggerMatching'
