@@ -19,6 +19,18 @@ export type TestArgs  = { _test: { participant_id: string; game_instance_id: str
 export type TokenArgs = { token: string }
 export type CallArgs  = TestArgs | TokenArgs
 
+export type AssignRoleResult = {
+  ok:               boolean
+  role:             string
+  customToken:      string
+  participant_id:   string
+  game_instance_id: string
+}
+
+/** Bootstrap — no session yet; classroom JWT or _test bypass travels in data. */
+export const assignRole = (args: CallArgs) =>
+  callFn<AssignRoleResult>('assignRole', args)
+
 export const CLASSROOM_URL = import.meta.env.DEV
   ? 'http://localhost:5173'
   : 'https://classroom.mygames.live'
