@@ -56,17 +56,30 @@ function liabH(l: number): number {
     : 0.6 * (0.95 * 500000 + 0.05 * l)
 }
 
+// Defaults match the spec-locked reservation values.
+const WM_RESERVATION_DEFAULT = 7_200_000
+const HB_RESERVATION_DEFAULT = 8_400_000
+
+function readReservation(configData: Record<string, unknown> | undefined, key: string, fallback: number): number {
+  const v = configData?.[key]
+  return (typeof v === 'number' && Number.isFinite(v) && v > 0 && Number.isInteger(v)) ? v : fallback
+}
+
 /**
  * Game-supplied scoring function. The library calls this; it never inspects the formula.
  *
  * Returns surplus vs. reservation value (can be negative for losing deals).
- * Reservations: WineMaster $7,200,000 · HomeBase $8,400,000.
+ * Default reservations: WineMaster $7,200,000 · HomeBase $8,400,000.
+ * configData overrides these if the instructor has saved custom values in Settings.
  *
  * Null outcome (walk-away / no deal) → 0: took the BATNA, net surplus = 0.
  * Rounding: nearest dollar at the final step only.
  */
-export function computeRawScore(roleKey: string, outcome: Outcome | null): number {
-  if (outcome === null) return 0  // walk-away: took BATNA, zero surplus
+export function computeRawScore(roleKey: string, outcome: Outcome | null, configData?: Record<string, unknown>): number {
+  const wmRes = readReservation(configData, 'winemaster_reservation_price', WM_RESERVATION_DEFAULT)
+  const hbRes = readReservation(configData, 'home_base_reservation_price',  HB_RESERVATION_DEFAULT)
+
+  if (outcome === null) return 0  // walk-away: zero surplus (BATNA exactly met)
 
   const S = outcome['shares'] as number
   const V = outcome['vesting'] as VestingKey
@@ -74,11 +87,11 @@ export function computeRawScore(roleKey: string, outcome: Outcome | null): numbe
   const L = outcome['liability'] as number
 
   if (roleKey === 'winemaster') {
-    // W = S·50·m_W(V) + (B ? seat_W(V) : 0) − 0.15·L − 7,200,000
-    return Math.round(S * 50 * M_W[V] + (B ? SEAT_W[V] : 0) - 0.15 * L) - 7_200_000
+    // W = S·50·m_W(V) + (B ? seat_W(V) : 0) − 0.15·L − wmRes
+    return Math.round(S * 50 * M_W[V] + (B ? SEAT_W[V] : 0) - 0.15 * L) - wmRes
   } else {
-    // H = 8,400,000 − (S·50·m_H(V) + (B ? 350,000 : 0) + liab_H(L))
-    return 8_400_000 - Math.round(S * 50 * M_H[V] + (B ? 350_000 : 0) + liabH(L))
+    // H = hbRes − (S·50·m_H(V) + (B ? 350,000 : 0) + liab_H(L))
+    return hbRes - Math.round(S * 50 * M_H[V] + (B ? 350_000 : 0) + liabH(L))
   }
 }
 
@@ -97,12 +110,17 @@ export const winemasterGameDef: GameDefinition = {
   // perRoleCap omitted → factory uses eligible.length (no cap, place every extra).
   // deadlockThreshold omitted → factory defaults to 5 (Winemaster's value).
 
-  // Settings page config fields — URL fields for role materials.
-  // Convention used by SettingsPage: public URL = 'public_info_url', per-role = '{roleKey}_info_url'.
+  // Settings page config fields.
+  // Role name defaults match the role labels declared above.
+  // Reservation price defaults match the spec-locked values used in computeRawScore.
   configFields: [
-    { key: 'public_info_url',     kind: 'url', default: '' },
-    { key: 'winemaster_info_url', kind: 'url', default: '' },
-    { key: 'home_base_info_url',  kind: 'url', default: '' },
+    { key: 'winemaster_role_name',         kind: 'string',      default: 'Winemaster'  },
+    { key: 'home_base_role_name',          kind: 'string',      default: 'Home Base'   },
+    { key: 'winemaster_reservation_price', kind: 'positiveInt', default: 7_200_000     },
+    { key: 'home_base_reservation_price',  kind: 'positiveInt', default: 8_400_000     },
+    { key: 'public_info_url',              kind: 'url',         default: ''            },
+    { key: 'winemaster_info_url',          kind: 'url',         default: ''            },
+    { key: 'home_base_info_url',           kind: 'url',         default: ''            },
   ],
 
   // No system prep questions yet; added when KC flow is built (BU-3).
