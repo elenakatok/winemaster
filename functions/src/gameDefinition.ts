@@ -128,9 +128,10 @@ export const winemasterGameDef: GameDefinition = {
     { key: 'home_base_role_name',          kind: 'string',      default: 'Home Base'   },
     { key: 'winemaster_reservation_price', kind: 'positiveInt', default: 7_200_000     },
     { key: 'home_base_reservation_price',  kind: 'positiveInt', default: 8_400_000     },
-    { key: 'public_info_url',              kind: 'url',         default: ''            },
-    { key: 'winemaster_info_url',          kind: 'url',         default: ''            },
-    { key: 'home_base_info_url',           kind: 'url',         default: ''            },
+    { key: 'winemaster_sheet_url',          kind: 'url',         default: '/role-info/winemaster.pdf'           },
+    { key: 'winemaster_worksheet_url',     kind: 'url',         default: '/role-info/winemasterWorksheet.xlsx' },
+    { key: 'home_base_sheet_url',          kind: 'url',         default: '/role-info/homebase.pdf'             },
+    { key: 'home_base_worksheet_url',      kind: 'url',         default: '/role-info/homebaseWorksheet.xlsx'   },
   ],
 
   // No system prep questions yet; added when KC flow is built (BU-3).

@@ -13,6 +13,17 @@ const winemasterRoleLabels: Record<string, string> = {
   home_base:  'Home Base',
 }
 
+const winemasterInfoLinks = [
+  { roleKey: 'winemaster', links: [
+    { key: 'winemaster_sheet_url',     label: 'Role sheet' },
+    { key: 'winemaster_worksheet_url', label: 'Worksheet'  },
+  ]},
+  { roleKey: 'home_base', links: [
+    { key: 'home_base_sheet_url',     label: 'Role sheet' },
+    { key: 'home_base_worksheet_url', label: 'Worksheet'  },
+  ]},
+]
+
 // ── Student participant entry at / ────────────────────────────────────────────
 // Dev: ?gameId=&pid= query params resolve the participant and render the outcome
 // form directly. Production participant flow is a future slice.
@@ -97,6 +108,7 @@ export default function App() {
             functions={functions}
             auth={auth}
             roleLabels={winemasterRoleLabels}
+            roleInfoLinks={winemasterInfoLinks}
           />
         } />
       </Routes>
