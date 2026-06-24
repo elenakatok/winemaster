@@ -15,9 +15,10 @@ functions/lib/
 .secret.local
 frontend/.env.local
 frontend/.env.*.local
-functions/.env
+# functions/.env is tracked (production-safe values only, no reserved FIREBASE_ vars)
+!functions/.env
 functions/.env.local
-functions/.env.*
+functions/.env.*.local
 functions/.secret.local
 
 # Firebase
