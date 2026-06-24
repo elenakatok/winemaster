@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@mygames/game-engine": "git+https://github.com/elenakatok/game-engine.git#v0.2.0",
+    "@mygames/game-ui": "file:../../../packages/game-ui",
     "firebase": "^12.13.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
