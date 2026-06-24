@@ -3,7 +3,7 @@ import { doc, getDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
 import { assignRole, CLASSROOM_URL } from '../api'
-import { useStudentSession, KnowledgeCheck, InfoPage } from '@mygames/game-ui'
+import { useStudentSession, KnowledgeCheck, InfoPage, PrepQuestions } from '@mygames/game-ui'
 import type { BootstrapArgs, InfoPageLink } from '@mygames/game-ui'
 
 // ── Phase state ───────────────────────────────────────────────────────────────
@@ -147,11 +147,14 @@ export default function Play() {
   }
 
   if (phase.name === 'prep') {
-    // BU-2c: Phase1PrepQuestions component mounts here.
     return (
-      <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '640px', margin: '0 auto' }}>
-        <p style={{ color: '#555' }}>Prep questions — coming in BU-2c.</p>
-      </main>
+      <PrepQuestions
+        participantId={session.participantId}
+        gameInstanceId={session.gameInstanceId}
+        functions={functions}
+        db={db}
+        onComplete={() => setPhase({ name: 'done' })}
+      />
     )
   }
 
