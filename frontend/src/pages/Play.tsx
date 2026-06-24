@@ -1,84 +1,88 @@
 import { useEffect, useState } from 'react'
-import { signInWithCustomToken } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { auth, db, functions } from '../firebase'
-import { assignRole, CLASSROOM_URL, type CallArgs } from '../api'
-import { KnowledgeCheck } from '@mygames/game-ui'
+import { assignRole, CLASSROOM_URL } from '../api'
+import { useStudentSession, KnowledgeCheck } from '@mygames/game-ui'
+import type { BootstrapArgs } from '@mygames/game-ui'
 
-type Phase = 'loading' | 'error' | 'kc' | 'prep' | 'done'
+// ── Phase state ───────────────────────────────────────────────────────────────
+// 'loading' = routing in progress after session is ready.
+// Actual phase screens are wired in BU-2b / BU-2c; stubs stand in for now.
 
-type Session = {
-  participantId:   string
-  gameInstanceId:  string
-  role:            string
+type GamePhase =
+  | { name: 'loading' }
+  | { name: 'error';  message: string }
+  | { name: 'info' }         // BU-2b: role-info PDF page
+  | { name: 'kc' }           // KC component (KC-3)
+  | { name: 'prep' }         // BU-2c: prep questions
+  | { name: 'done' }         // waiting for match / post-game
+
+// ── Phase routing ─────────────────────────────────────────────────────────────
+
+async function routeToPhase(participantId: string, gameInstanceId: string): Promise<GamePhase> {
+  const snap = await getDoc(
+    doc(db, 'game_instances', gameInstanceId, 'participants', participantId),
+  )
+  const d = snap.data() ?? {}
+  if (d.prep_status === 'complete')          return { name: 'done' }
+  if (d.knowledge_check_score != null)       return { name: 'prep' }
+  return { name: 'kc' }
+  // TODO BU-2b: add 'info' slot (between role assignment and kc) once info phase is built.
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
+
 /**
- * Student play entry point.
+ * Student play entry point for Winemaster.
  *
- * Production URL: /?token=<classroom JWT>
+ * Production URL:   /?token=<classroom JWT>
  * Emulator dev URL: /?_pid=<participant_id>&_gid=<game_instance_id>
- *   (DEV only — the _test params bypass JWT verification in Cloud Functions)
+ *   (DEV only — _test params bypass JWT verification in Cloud Functions)
  */
 export default function Play() {
-  const [phase,    setPhase]    = useState<Phase>('loading')
-  const [session,  setSession]  = useState<Session | null>(null)
-  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const p        = new URLSearchParams(window.location.search)
+  const token    = p.get('token')
+  const testPid  = import.meta.env.DEV ? p.get('_pid') : null
+  const testGid  = import.meta.env.DEV ? p.get('_gid') : null
 
-  useEffect(() => {
-    const p      = new URLSearchParams(window.location.search)
-    const token  = p.get('token')
-    const testPid = import.meta.env.DEV ? p.get('_pid') : null
-    const testGid = import.meta.env.DEV ? p.get('_gid') : null
+  const [phase, setPhase] = useState<GamePhase>({ name: 'loading' })
 
-    if (!token && !(testPid && testGid)) {
-      // No entry params — placeholder until classroom integration
-      setPhase('done')
-      return
-    }
-
-    const args: CallArgs = (testPid && testGid)
-      ? { _test: { participant_id: testPid, game_instance_id: testGid } }
-      : { token: token! }
-
-    const bootstrap = async () => {
-      try {
-        // 1. Assign role and receive a short-lived custom token
-        const result = await assignRole(args)
-
-        // 2. Sign in — SDK will now attach Bearer on all subsequent calls
-        await signInWithCustomToken(auth, result.customToken)
-
-        const sess: Session = {
-          participantId:  result.participant_id,
-          gameInstanceId: result.game_instance_id,
-          role:           result.role,
-        }
-        setSession(sess)
-
-        // 3. Read participant doc to route to the correct phase on resume
-        const snap = await getDoc(
-          doc(db, 'game_instances', sess.gameInstanceId, 'participants', sess.participantId),
-        )
-        const pdata = snap.data() ?? {}
-
-        if (pdata.prep_status === 'complete') {
-          setPhase('done')
-        } else if (pdata.knowledge_check_score != null) {
-          setPhase('prep')
-        } else {
-          setPhase('kc')
-        }
-      } catch (err) {
-        setErrorMsg(err instanceof Error ? err.message : 'Failed to start session.')
-        setPhase('error')
+  // ── Session lifecycle (shared machinery) ─────────────────────────────────────
+  // useStudentSession owns: authStateReady resume guard, once-only JWT exchange,
+  // signInWithCustomToken, persistence mode selection.
+  // Winemaster injects only its bootstrap (assignRole via httpsCallable).
+  const session = useStudentSession({
+    auth,
+    token,
+    testIds: (testPid && testGid) ? { participantId: testPid, gameInstanceId: testGid } : null,
+    bootstrap: async (args: BootstrapArgs) => {
+      const r = await assignRole(args)
+      return {
+        participantId:  r.participant_id,
+        gameInstanceId: r.game_instance_id,
+        customToken:    r.customToken,
       }
-    }
+    },
+  })
 
-    void bootstrap()
-  }, [])
+  // ── Phase routing ─────────────────────────────────────────────────────────────
+  // Fires once when the session transitions to 'ready' (fresh entry or resume).
+  // After this point all backend calls use the auto-refreshing Firebase ID token.
+  useEffect(() => {
+    if (session.kind !== 'ready') return
+    // session is stable after transitioning to 'ready'; deps cover the transition.
+    const { participantId, gameInstanceId } = session
+    let cancelled = false
+    routeToPhase(participantId, gameInstanceId)
+      .then(p  => { if (!cancelled) setPhase(p) })
+      .catch(err => { if (!cancelled) setPhase({ name: 'error', message: err instanceof Error ? err.message : 'Failed to load session.' }) })
+    return () => { cancelled = true }
+  }, [session]) // session ref changes once: loading → ready/error/no-token
 
-  if (phase === 'loading') {
+  // ── Render ────────────────────────────────────────────────────────────────────
+
+  // Show loading while session is establishing OR while routing is in progress.
+  if (session.kind === 'loading' || (session.kind === 'ready' && phase.name === 'loading')) {
     return (
       <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
         <p>Loading…</p>
@@ -86,38 +90,73 @@ export default function Play() {
     )
   }
 
-  if (phase === 'error') {
+  // No launch token — student must enter from the classroom.
+  if (session.kind === 'no-token') {
+    return (
+      <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '480px', margin: '2rem auto' }}>
+        <h2 style={{ marginBottom: '0.75rem' }}>Winemaster</h2>
+        <p>Please launch Winemaster from the classroom to join a session.</p>
+        <p style={{ marginTop: '1.5rem' }}>
+          <a href={CLASSROOM_URL}>← Go to classroom</a>
+        </p>
+      </main>
+    )
+  }
+
+  // Session error (bootstrap failed, token expired, etc.)
+  if (session.kind === 'error') {
     return (
       <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
-        <p style={{ color: '#c00' }}>{errorMsg ?? 'Something went wrong.'}</p>
+        <p style={{ color: '#c00' }}>{session.message}</p>
         <p><a href={CLASSROOM_URL}>← Return to classroom</a></p>
       </main>
     )
   }
 
-  if (phase === 'kc' && session) {
+  // Phase error (Firestore read failed after session established)
+  if (phase.name === 'error') {
+    return (
+      <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+        <p style={{ color: '#c00' }}>{phase.message}</p>
+        <p><a href={CLASSROOM_URL}>← Return to classroom</a></p>
+      </main>
+    )
+  }
+
+  // ── session.kind === 'ready', phase is active ─────────────────────────────────
+
+  if (phase.name === 'info') {
+    // BU-2b: Phase1Info component (role-info PDF page) mounts here.
+    return (
+      <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '640px', margin: '0 auto' }}>
+        <p style={{ color: '#555' }}>Role info page — coming in BU-2b.</p>
+      </main>
+    )
+  }
+
+  if (phase.name === 'kc') {
     return (
       <KnowledgeCheck
         participantId={session.participantId}
         gameInstanceId={session.gameInstanceId}
         functions={functions}
         db={db}
-        onComplete={() => setPhase('prep')}
+        onComplete={() => setPhase({ name: 'prep' })}
       />
     )
   }
 
-  if (phase === 'prep') {
-    // Prep-questions component mounts here in a future slice.
+  if (phase.name === 'prep') {
+    // BU-2c: Phase1PrepQuestions component mounts here.
     return (
       <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '640px', margin: '0 auto' }}>
-        <p style={{ color: '#555' }}>Prep questions</p>
+        <p style={{ color: '#555' }}>Prep questions — coming in BU-2c.</p>
         <p>Prep questions will appear here.</p>
       </main>
     )
   }
 
-  // phase === 'done' (waiting for match) or no entry params yet
+  // phase === 'done' (prep complete; waiting for match or post-game)
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem', textAlign: 'center' }}>
       <h1>Winemaster</h1>
