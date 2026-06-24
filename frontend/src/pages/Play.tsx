@@ -3,19 +3,25 @@ import { doc, getDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
 import { auth, db, functions } from '../firebase'
 import { assignRole, CLASSROOM_URL } from '../api'
-import { useStudentSession, KnowledgeCheck, InfoPage, PrepQuestions } from '@mygames/game-ui'
+import {
+  useStudentSession,
+  KnowledgeCheck,
+  InfoPage,
+  PrepQuestions,
+  GameHeader,
+  typography,
+} from '@mygames/game-ui'
 import type { BootstrapArgs, InfoPageLink } from '@mygames/game-ui'
 
 // ── Phase state ───────────────────────────────────────────────────────────────
-// 'loading' = routing in progress after session is ready.
 
 type GamePhase =
   | { name: 'loading' }
   | { name: 'error';  message: string }
   | { name: 'info';   roleLabel: string; links: InfoPageLink[]; publicLink: { label: string; url: string } | null }
-  | { name: 'kc' }           // KC component (KC-3)
-  | { name: 'prep' }         // BU-2c: prep questions
-  | { name: 'done' }         // waiting for match / post-game
+  | { name: 'kc' }
+  | { name: 'prep' }
+  | { name: 'done' }
 
 // ── Phase routing ─────────────────────────────────────────────────────────────
 
@@ -34,11 +40,10 @@ async function routeToPhase(participantId: string, gameInstanceId: string): Prom
   if (d.prep_status === 'complete')    return { name: 'done' }
   if (d.knowledge_check_score != null) return { name: 'prep' }
 
-  // Fresh participant → info page. Cloud function returns only this role's URLs.
   const fn = httpsCallable<object, GetInfoUrlsResult>(functions, 'getInfoUrls')
   const { data } = await fn({})
   return {
-    name: 'info',
+    name:       'info',
     roleLabel:  data.roleLabel,
     links:      data.links,
     publicLink: data.publicLink ?? null,
@@ -48,14 +53,16 @@ async function routeToPhase(participantId: string, gameInstanceId: string): Prom
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function Play() {
-  const p        = new URLSearchParams(window.location.search)
-  const token    = p.get('token')
-  const testPid  = import.meta.env.DEV ? p.get('_pid') : null
-  const testGid  = import.meta.env.DEV ? p.get('_gid') : null
+  const p       = new URLSearchParams(window.location.search)
+  const token   = p.get('token')
+  const testPid = import.meta.env.DEV ? p.get('_pid') : null
+  const testGid = import.meta.env.DEV ? p.get('_gid') : null
 
-  const [phase, setPhase] = useState<GamePhase>({ name: 'loading' })
+  const [phase, setPhase]           = useState<GamePhase>({ name: 'loading' })
+  const [headerLinks, setHeaderLinks] = useState<InfoPageLink[] | null>(null)
 
-  // ── Session lifecycle (shared machinery) ──────────────────────────────────
+  // ── Session lifecycle ────────────────────────────────────────────────────
+
   const session = useStudentSession({
     auth,
     token,
@@ -70,22 +77,44 @@ export default function Play() {
     },
   })
 
-  // ── Phase routing ──────────────────────────────────────────────────────────
+  // ── Phase routing + header-link population ────────────────────────────────
+
   useEffect(() => {
     if (session.kind !== 'ready') return
     const { participantId, gameInstanceId } = session
     let cancelled = false
-    routeToPhase(participantId, gameInstanceId)
-      .then(p  => { if (!cancelled) setPhase(p) })
-      .catch(err => { if (!cancelled) setPhase({ name: 'error', message: err instanceof Error ? err.message : 'Failed to load session.' }) })
+
+    const run = async () => {
+      let p: GamePhase
+      try {
+        p = await routeToPhase(participantId, gameInstanceId)
+      } catch (err) {
+        if (!cancelled) setPhase({ name: 'error', message: err instanceof Error ? err.message : 'Failed to load session.' })
+        return
+      }
+      if (cancelled) return
+      setPhase(p)
+
+      // Populate header links once per session load.
+      // Info phase: links already returned by routeToPhase — no extra call.
+      // KC/prep/done: one additional getInfoUrls call to fetch links for the header.
+      if (p.name === 'info') {
+        if (!cancelled) setHeaderLinks(p.links)
+      } else {
+        const fn = httpsCallable<object, GetInfoUrlsResult>(functions, 'getInfoUrls')
+        fn({}).then(({ data }) => { if (!cancelled) setHeaderLinks(data.links) }).catch(() => {})
+      }
+    }
+
+    void run()
     return () => { cancelled = true }
   }, [session])
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── Render: pre-session states (no header) ────────────────────────────────
 
   if (session.kind === 'loading' || (session.kind === 'ready' && phase.name === 'loading')) {
     return (
-      <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <main style={{ padding: '2rem', fontFamily: typography.fontFamily }}>
         <p>Loading…</p>
       </main>
     )
@@ -93,19 +122,17 @@ export default function Play() {
 
   if (session.kind === 'no-token') {
     return (
-      <main style={{ padding: '2rem', fontFamily: 'sans-serif', maxWidth: '480px', margin: '2rem auto' }}>
+      <main style={{ padding: '2rem', fontFamily: typography.fontFamily, maxWidth: '480px', margin: '2rem auto' }}>
         <h2 style={{ marginBottom: '0.75rem' }}>Winemaster</h2>
         <p>Please launch Winemaster from the classroom to join a session.</p>
-        <p style={{ marginTop: '1.5rem' }}>
-          <a href={CLASSROOM_URL}>← Go to classroom</a>
-        </p>
+        <p style={{ marginTop: '1.5rem' }}><a href={CLASSROOM_URL}>← Go to classroom</a></p>
       </main>
     )
   }
 
   if (session.kind === 'error') {
     return (
-      <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <main style={{ padding: '2rem', fontFamily: typography.fontFamily }}>
         <p style={{ color: '#c00' }}>{session.message}</p>
         <p><a href={CLASSROOM_URL}>← Return to classroom</a></p>
       </main>
@@ -114,55 +141,56 @@ export default function Play() {
 
   if (phase.name === 'error') {
     return (
-      <main style={{ padding: '2rem', fontFamily: 'sans-serif' }}>
+      <main style={{ padding: '2rem', fontFamily: typography.fontFamily }}>
         <p style={{ color: '#c00' }}>{phase.message}</p>
         <p><a href={CLASSROOM_URL}>← Return to classroom</a></p>
       </main>
     )
   }
 
-  // ── session.kind === 'ready', phase is active ──────────────────────────────
+  // ── Render: session ready — header persists across all phases ─────────────
+  // headerLinks is null until the first getInfoUrls resolves; header shows logo
+  // immediately and links appear once resolved (one call per page load).
 
-  if (phase.name === 'info') {
-    return (
-      <InfoPage
-        roleLabel={phase.roleLabel}
-        links={phase.links}
-        publicLink={phase.publicLink}
-        onContinue={() => setPhase({ name: 'kc' })}
-      />
-    )
-  }
-
-  if (phase.name === 'kc') {
-    return (
-      <KnowledgeCheck
-        participantId={session.participantId}
-        gameInstanceId={session.gameInstanceId}
-        functions={functions}
-        db={db}
-        onComplete={() => setPhase({ name: 'prep' })}
-      />
-    )
-  }
-
-  if (phase.name === 'prep') {
-    return (
-      <PrepQuestions
-        participantId={session.participantId}
-        gameInstanceId={session.gameInstanceId}
-        functions={functions}
-        db={db}
-        onComplete={() => setPhase({ name: 'done' })}
-      />
-    )
-  }
-
-  // phase === 'done'
   return (
-    <div style={{ fontFamily: 'sans-serif', padding: '2rem', textAlign: 'center' }}>
-      <h1>Winemaster</h1>
-      <p>Coming soon.</p>
+    <div style={{ fontFamily: typography.fontFamily }}>
+      <GameHeader studentLinks={headerLinks} />
+
+      {phase.name === 'info' && (
+        <InfoPage
+          roleLabel={phase.roleLabel}
+          links={phase.links}
+          publicLink={phase.publicLink}
+          onContinue={() => setPhase({ name: 'kc' })}
+        />
+      )}
+
+      {phase.name === 'kc' && (
+        <KnowledgeCheck
+          participantId={session.participantId}
+          gameInstanceId={session.gameInstanceId}
+          functions={functions}
+          db={db}
+          onComplete={() => setPhase({ name: 'prep' })}
+        />
+      )}
+
+      {phase.name === 'prep' && (
+        <PrepQuestions
+          participantId={session.participantId}
+          gameInstanceId={session.gameInstanceId}
+          functions={functions}
+          db={db}
+          onComplete={() => setPhase({ name: 'done' })}
+        />
+      )}
+
+      {phase.name === 'done' && (
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <h1>Winemaster</h1>
+          <p>Coming soon.</p>
+        </div>
+      )}
     </div>
   )
 }
