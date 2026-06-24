@@ -96,6 +96,18 @@ export const winemasterGameDef: GameDefinition = {
   classroom: { callbackSecretId: 'CLASSROOM_CALLBACK_SECRET' },
   // perRoleCap omitted → factory uses eligible.length (no cap, place every extra).
   // deadlockThreshold omitted → factory defaults to 5 (Winemaster's value).
+
+  // Settings page config fields — URL fields for role materials.
+  // Convention used by SettingsPage: public URL = 'public_info_url', per-role = '{roleKey}_info_url'.
+  configFields: [
+    { key: 'public_info_url',     kind: 'url', default: '' },
+    { key: 'winemaster_info_url', kind: 'url', default: '' },
+    { key: 'home_base_info_url',  kind: 'url', default: '' },
+  ],
+
+  // No system prep questions yet; added when KC flow is built (BU-3).
+  prepDefaults: [],
+
   // BU-phase: content fields not used by backend factories; populated in BU slices.
   content: {
     infoPDFs:      {} as Record<string, { private: string; public?: string }>,

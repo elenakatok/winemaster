@@ -14,6 +14,8 @@ import {
   makeSubmitConfirmation,
   makeFinalizeInstance,
   makePushResultsToClassroom,
+  makeGetGameConfig,
+  makeUpdateGameConfig,
 } from '@mygames/game-server'
 import { winemasterGameDef } from './gameDefinition'
 
@@ -34,6 +36,8 @@ export const submitLeadOutcome      = makeSubmitLeadOutcome(winemasterGameDef)
 export const submitConfirmation     = makeSubmitConfirmation(winemasterGameDef)
 export const finalizeInstance       = makeFinalizeInstance(winemasterGameDef)
 export const pushResultsToClassroom = makePushResultsToClassroom(winemasterGameDef)
+export const getGameConfig          = makeGetGameConfig(winemasterGameDef)
+export const updateGameConfig       = makeUpdateGameConfig(winemasterGameDef)
 
 // ── Non-game onRequest endpoints (kept as-is; not converted) ──────────────────
 
