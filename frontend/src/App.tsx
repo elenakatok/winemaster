@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { doc, getDoc } from 'firebase/firestore'
-import { db } from './firebase'
+import { db, auth, functions } from './firebase'
 import OutcomeReporting from './phases/OutcomeReporting'
 import InstructorDashboard from './pages/InstructorDashboard'
 import Configure from './pages/Configure'
+import { SettingsPage } from '@mygames/game-ui'
 import type { CallArgs } from './api'
+
+const winemasterRoleLabels: Record<string, string> = {
+  winemaster: 'Winemaster',
+  home_base:  'Home Base',
+}
 
 // ── Student participant entry at / ────────────────────────────────────────────
 // Dev: ?gameId=&pid= query params resolve the participant and render the outcome
@@ -85,6 +91,14 @@ export default function App() {
         <Route path="/"          element={<Play />} />
         <Route path="/dashboard" element={<InstructorDashboard />} />
         <Route path="/configure" element={<Configure />} />
+        <Route path="/settings"  element={
+          <SettingsPage
+            title="Settings — Winemaster"
+            functions={functions}
+            auth={auth}
+            roleLabels={winemasterRoleLabels}
+          />
+        } />
       </Routes>
     </BrowserRouter>
   )

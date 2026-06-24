@@ -104,6 +104,7 @@ export default function InstructorDashboard() {
       functions={functions}
       auth={auth}
       rtdb={rtdb}
+      settingsRoute="/settings"
     />
   )
 }
