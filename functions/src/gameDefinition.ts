@@ -134,6 +134,18 @@ export const winemasterGameDef: GameDefinition = {
     { key: 'home_base_worksheet_url',      kind: 'url',         default: '/role-info/homebaseWorksheet.xlsx'   },
   ],
 
+  // Info page links — keys match configFields above; no public link for Winemaster.
+  roleInfoLinks: [
+    { roleKey: 'winemaster', links: [
+      { key: 'winemaster_sheet_url',     label: 'Role sheet' },
+      { key: 'winemaster_worksheet_url', label: 'Worksheet'  },
+    ]},
+    { roleKey: 'home_base', links: [
+      { key: 'home_base_sheet_url',     label: 'Role sheet' },
+      { key: 'home_base_worksheet_url', label: 'Worksheet'  },
+    ]},
+  ],
+
   prepDefaults: [
     // ── Q1: Role-identification gate (system, one per role) ──────────────────
     {

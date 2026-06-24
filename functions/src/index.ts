@@ -20,6 +20,7 @@ import {
   makeGetStudentPrepQuestions,
   makeSubmitKnowledgeCheck,
   makeSubmitStaticKnowledgeCheckQuestion,
+  makeGetInfoUrls,
 } from '@mygames/game-server'
 import { winemasterGameDef } from './gameDefinition'
 
@@ -49,9 +50,10 @@ export const finalizeInstance       = makeFinalizeInstance(winemasterGameDef)
 export const pushResultsToClassroom = makePushResultsToClassroom(winemasterGameDef)
 export const getGameConfig          = makeGetGameConfig(winemasterGameDef)
 export const updateGameConfig       = makeUpdateGameConfig(winemasterGameDef)
-export const getStudentPrepQuestions          = makeGetStudentPrepQuestions(winemasterGameDef)
-export const submitKnowledgeCheck             = makeSubmitKnowledgeCheck(winemasterGameDef)
+export const getStudentPrepQuestions            = makeGetStudentPrepQuestions(winemasterGameDef)
+export const submitKnowledgeCheck               = makeSubmitKnowledgeCheck(winemasterGameDef)
 export const submitStaticKnowledgeCheckQuestion = makeSubmitStaticKnowledgeCheckQuestion(winemasterGameDef)
+export const getInfoUrls                        = makeGetInfoUrls(winemasterGameDef)
 
 // ── Non-game onRequest endpoints (kept as-is; not converted) ──────────────────
 
