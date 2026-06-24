@@ -16,10 +16,18 @@ import {
   makePushResultsToClassroom,
   makeGetGameConfig,
   makeUpdateGameConfig,
+  validateKCGate,
 } from '@mygames/game-server'
 import { winemasterGameDef } from './gameDefinition'
 
 admin.initializeApp()
+
+// ── KC gate validation (runs at cold start — loud failure if gate is misconfigured) ──
+const _kcGateError = validateKCGate(
+  winemasterGameDef.roles.roles.map(r => r.key),
+  winemasterGameDef.prepDefaults ?? [],
+)
+if (_kcGateError) throw new Error(`Winemaster KC gate validation failed: ${_kcGateError}`)
 
 // ── Game endpoints (onCall, via game-server factories + Winemaster definition) ─
 
