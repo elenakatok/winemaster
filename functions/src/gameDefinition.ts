@@ -72,14 +72,24 @@ function readReservation(configData: Record<string, unknown> | undefined, key: s
  * Default reservations: WineMaster $7,200,000 · HomeBase $8,400,000.
  * configData overrides these if the instructor has saved custom values in Settings.
  *
- * Null outcome (walk-away / no deal) → 0: took the BATNA, net surplus = 0.
+ * Walk-away (null outcome): scored at exactly the reservation value.
+ * Winemaster's formulas are surplus-based (realized − reservation), so at BATNA the
+ * realized value equals the reservation and the surplus is 0. That 0 comes from the
+ * formula, not a hardcoded constant — ensuring a future non-surplus game gets the
+ * correct non-zero walk-away score automatically.
  * Rounding: nearest dollar at the final step only.
  */
 export function computeRawScore(roleKey: string, outcome: Outcome | null, configData?: Record<string, unknown>): number {
   const wmRes = readReservation(configData, 'winemaster_reservation_price', WM_RESERVATION_DEFAULT)
   const hbRes = readReservation(configData, 'home_base_reservation_price',  HB_RESERVATION_DEFAULT)
 
-  if (outcome === null) return 0  // walk-away: zero surplus (BATNA exactly met)
+  if (outcome === null) {
+    // Walk-away: score as if realized exactly the reservation value.
+    //   WM surplus formula: realized_value − wmRes → wmRes − wmRes = 0
+    //   HB surplus formula: hbRes − cost         → hbRes − hbRes = 0
+    const walkAwayValue = roleKey === 'winemaster' ? wmRes : hbRes
+    return roleKey === 'winemaster' ? walkAwayValue - wmRes : hbRes - walkAwayValue
+  }
 
   const S = outcome['shares'] as number
   const V = outcome['vesting'] as VestingKey
