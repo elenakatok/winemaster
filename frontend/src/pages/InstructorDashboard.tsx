@@ -1,24 +1,14 @@
 import { useState } from 'react'
 import { httpsCallable } from 'firebase/functions'
-import { InstructorDashboard as SharedDashboard, type DeadlockResolutionProps, type SharedGroup, type OutcomeFields } from '@mygames/game-ui'
+import { InstructorDashboard as SharedDashboard, type DeadlockResolutionProps, type OutcomeFields } from '@mygames/game-ui'
 import { auth, functions, rtdb } from '../firebase'
-import { winemasterConfig, winemasterSchema, formatField, FIELD_LABELS } from '../gameConfig'
+import { winemasterConfig } from '../gameConfig'
 
 // ── Role labels from game config ──────────────────────────────────────────────
 
 const roleLabels = Object.fromEntries(
   winemasterConfig.roles.map(r => [r.key, r.label])
 )
-
-// ── Outcome formatting ────────────────────────────────────────────────────────
-
-function formatGroupOutcome(group: SharedGroup): string {
-  if (group.agreement_reached === false) return 'No deal'
-  if (!group.outcome || group.agreement_reached == null) return '—'
-  return winemasterSchema
-    .map(f => `${FIELD_LABELS[f.key]}: ${formatField(f, group.outcome![f.key])}`)
-    .join(' · ')
-}
 
 // ── Deadlock resolution control ───────────────────────────────────────────────
 
@@ -98,7 +88,6 @@ export default function InstructorDashboard() {
     <SharedDashboard
       title="Instructor Dashboard — Winemaster"
       roleLabels={roleLabels}
-      formatGroupOutcome={formatGroupOutcome}
       DeadlockResolutionControl={WinemasterDeadlockControl}
       submitInstructorOutcome={submitInstructorOutcome}
       functions={functions}
