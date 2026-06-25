@@ -15,9 +15,10 @@ async function callFn<T>(name: string, data: object = {}): Promise<T> {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type TestArgs  = { _test: { participant_id: string; game_instance_id: string } }
-export type TokenArgs = { token: string }
-export type CallArgs  = TestArgs | TokenArgs
+export type TestArgs   = { _test: { participant_id: string; game_instance_id: string } }
+export type TokenArgs  = { token: string }
+export type BearerArgs = Record<string, never>   // empty — auth is in Authorization header
+export type CallArgs   = TestArgs | TokenArgs | BearerArgs
 
 export type AssignRoleResult = {
   ok:               boolean
@@ -46,6 +47,15 @@ export function isAuthError(err: unknown): boolean {
 }
 
 export type OutcomeFields = Record<string, unknown>
+
+export const confirmReady = (args: CallArgs) =>
+  callFn<{ ok: boolean }>('confirmReady', args)
+
+export const verifyAttendanceCode = (args: CallArgs, code: string) =>
+  callFn<{ ok: boolean }>('verifyAttendanceCode', { ...args, code })
+
+export const startNegotiation = (args: CallArgs) =>
+  callFn<{ ok: boolean }>('startNegotiation', args)
 
 export const submitLeadOutcome = (args: CallArgs, outcome: OutcomeFields | null) =>
   callFn<{ ok: boolean }>('submitLeadOutcome', { ...args, outcome })

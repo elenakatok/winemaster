@@ -1,27 +1,43 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { doc, getDoc } from 'firebase/firestore'
 import { httpsCallable } from 'firebase/functions'
-import { auth, db, functions } from '../firebase'
-import { assignRole, CLASSROOM_URL } from '../api'
+import { auth, db, rtdb, functions } from '../firebase'
+import { assignRole, confirmReady, verifyAttendanceCode, CLASSROOM_URL } from '../api'
 import {
   useStudentSession,
   KnowledgeCheck,
   InfoPage,
   PrepQuestions,
   GameHeader,
+  WaitingRoom,
+  GroupReveal,
+  OffPlatformHolding,
+  Results,
   typography,
+  colors,
+  layout,
+  spacing,
 } from '@mygames/game-ui'
 import type { BootstrapArgs, InfoPageLink } from '@mygames/game-ui'
+import OutcomeReporting from '../phases/OutcomeReporting'
+import { winemasterConfig, winemasterSchema, FIELD_LABELS, formatField } from '../gameConfig'
 
 // ── Phase state ───────────────────────────────────────────────────────────────
 
 type GamePhase =
   | { name: 'loading' }
-  | { name: 'error';  message: string }
-  | { name: 'info';   roleLabel: string; links: InfoPageLink[]; publicLink: { label: string; url: string } | null }
+  | { name: 'error';           message: string }
+  | { name: 'info';            roleLabel: string; links: InfoPageLink[]; publicLink: { label: string; url: string } | null }
   | { name: 'kc' }
   | { name: 'prep' }
-  | { name: 'done' }
+  | { name: 'hold' }
+  | { name: 'confirmation' }
+  | { name: 'attendance-code' }
+  | { name: 'waiting-room' }
+  | { name: 'group-reveal';    groupId: string }
+  | { name: 'off-platform';    groupId: string }
+  | { name: 'outcome-reporting'; groupId: string; isLead: boolean }
+  | { name: 'results';         groupId: string }
 
 // ── Phase routing ─────────────────────────────────────────────────────────────
 
@@ -37,17 +53,72 @@ async function routeToPhase(participantId: string, gameInstanceId: string): Prom
     doc(db, 'game_instances', gameInstanceId, 'participants', participantId),
   )
   const d = snap.data() ?? {}
-  if (d.prep_status === 'complete')    return { name: 'done' }
-  if (d.knowledge_check_score != null) return { name: 'prep' }
 
-  const fn = httpsCallable<object, GetInfoUrlsResult>(functions, 'getInfoUrls')
-  const { data } = await fn({})
-  return {
-    name:       'info',
-    roleLabel:  data.roleLabel,
-    links:      data.links,
-    publicLink: data.publicLink ?? null,
+  if (d.prep_status !== 'complete') {
+    if (d.knowledge_check_score != null) return { name: 'prep' }
+    const fn = httpsCallable<object, GetInfoUrlsResult>(functions, 'getInfoUrls')
+    const { data } = await fn({})
+    return {
+      name:       'info',
+      roleLabel:  data.roleLabel,
+      links:      data.links,
+      publicLink: data.publicLink ?? null,
+    }
   }
+
+  // prep_status === 'complete' — Phase 2 routing
+  if (!d.confirmed_ready_at)    return { name: 'hold' }
+  if (!d.attendance_confirmed_at) return { name: 'confirmation' }
+  if (!d.group_id)              return { name: 'waiting-room' }
+
+  const groupId = d.group_id as string
+  const groupSnap = await getDoc(
+    doc(db, 'game_instances', gameInstanceId, 'groups', groupId),
+  )
+  const g = groupSnap.data() ?? {}
+  const status = g['status'] as string | undefined
+
+  if (status === 'matched')    return { name: 'group-reveal', groupId }
+  if (status === 'negotiating') return { name: 'off-platform', groupId }
+  if (status === 'reporting' || status === 'deadlocked') {
+    return { name: 'outcome-reporting', groupId, isLead: d.is_lead === true }
+  }
+  if (status === 'completed')  return { name: 'results', groupId }
+
+  return { name: 'waiting-room' }
+}
+
+// ── Winemaster-specific outcome formatter ─────────────────────────────────────
+
+function formatWinemasterOutcome(
+  outcome: Record<string, unknown> | null,
+  agreementReached: boolean,
+): React.ReactNode {
+  if (!agreementReached || outcome == null) {
+    return (
+      <p style={{ fontSize: '1.05rem', color: colors.textSecondary, marginBottom: layout.pagePad }}>
+        No deal reached.
+      </p>
+    )
+  }
+  return (
+    <div style={{
+      background:   '#f0f7ff',
+      border:       '1px solid #b3d4f5',
+      borderRadius: '4px',
+      padding:      '0.75rem 1rem',
+      marginBottom: layout.pagePad,
+    }}>
+      {winemasterSchema.map(field => (
+        <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', padding: '0.2rem 0' }}>
+          <span style={{ color: colors.textSecondary, marginRight: '1rem' }}>
+            {FIELD_LABELS[field.key] ?? field.key}
+          </span>
+          <span>{formatField(field, outcome[field.key])}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -58,8 +129,13 @@ export default function Play() {
   const testPid = import.meta.env.DEV ? p.get('_pid') : null
   const testGid = import.meta.env.DEV ? p.get('_gid') : null
 
-  const [phase, setPhase]           = useState<GamePhase>({ name: 'loading' })
+  const [phase, setPhase]             = useState<GamePhase>({ name: 'loading' })
   const [headerLinks, setHeaderLinks] = useState<InfoPageLink[] | null>(null)
+  const [confError,   setConfError]   = useState<string | null>(null)
+  const [confLoading, setConfLoading] = useState(false)
+  const [codeValue,   setCodeValue]   = useState('')
+  const [codeError,   setCodeError]   = useState<string | null>(null)
+  const [codeLoading, setCodeLoading] = useState(false)
 
   // ── Session lifecycle ────────────────────────────────────────────────────
 
@@ -95,9 +171,6 @@ export default function Play() {
       if (cancelled) return
       setPhase(p)
 
-      // Populate header links once per session load.
-      // Info phase: links already returned by routeToPhase — no extra call.
-      // KC/prep/done: one additional getInfoUrls call to fetch links for the header.
       if (p.name === 'info') {
         if (!cancelled) setHeaderLinks(p.links)
       } else {
@@ -148,9 +221,36 @@ export default function Play() {
     )
   }
 
+  const { participantId, gameInstanceId } = session
+
+  // ── P2 inline handlers ────────────────────────────────────────────────────
+
+  const handleConfirmReady = () => {
+    setConfLoading(true)
+    setConfError(null)
+    confirmReady({})
+      .then(() => setPhase({ name: 'attendance-code' }))
+      .catch((err: unknown) => {
+        setConfError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+        setConfLoading(false)
+      })
+  }
+
+  const handleAttendanceCode = (e: React.FormEvent) => {
+    e.preventDefault()
+    const code = codeValue.trim()
+    if (code.length < 4) return
+    setCodeLoading(true)
+    setCodeError(null)
+    verifyAttendanceCode({}, code)
+      .then(() => setPhase({ name: 'waiting-room' }))
+      .catch((err: unknown) => {
+        setCodeError(err instanceof Error ? err.message : 'Something went wrong. Please try again.')
+        setCodeLoading(false)
+      })
+  }
+
   // ── Render: session ready — header persists across all phases ─────────────
-  // headerLinks is null until the first getInfoUrls resolves; header shows logo
-  // immediately and links appear once resolved (one call per page load).
 
   return (
     <div style={{ fontFamily: typography.fontFamily }}>
@@ -167,8 +267,8 @@ export default function Play() {
 
       {phase.name === 'kc' && (
         <KnowledgeCheck
-          participantId={session.participantId}
-          gameInstanceId={session.gameInstanceId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
           functions={functions}
           db={db}
           onComplete={() => setPhase({ name: 'prep' })}
@@ -177,19 +277,150 @@ export default function Play() {
 
       {phase.name === 'prep' && (
         <PrepQuestions
-          participantId={session.participantId}
-          gameInstanceId={session.gameInstanceId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
           functions={functions}
           db={db}
-          onComplete={() => setPhase({ name: 'done' })}
+          onComplete={() => setPhase({ name: 'hold' })}
         />
       )}
 
-      {phase.name === 'done' && (
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
-          <h1>Winemaster</h1>
-          <p>Coming soon.</p>
-        </div>
+      {phase.name === 'hold' && (
+        <main style={{ padding: layout.pagePad, maxWidth: layout.contentWidth, margin: '0 auto' }}>
+          <h1 style={{ marginTop: 0 }}>Preparation complete</h1>
+          <p style={{ lineHeight: 1.6, marginBottom: spacing.gapSm }}>
+            When class begins and your instructor starts the session, you&apos;ll see who
+            you&apos;ve been matched with.
+          </p>
+          <p style={{ color: colors.textSecondary, marginBottom: layout.pagePad }}>
+            You can close this tab and come back later — your work has been saved.
+          </p>
+          <button onClick={() => setPhase({ name: 'confirmation' })}>
+            I&apos;m in class — continue
+          </button>
+        </main>
+      )}
+
+      {phase.name === 'confirmation' && (
+        <main style={{ padding: layout.pagePad, maxWidth: layout.contentWidth, margin: '0 auto' }}>
+          <h1 style={{ marginTop: 0 }}>Ready to negotiate?</h1>
+          <p style={{ lineHeight: 1.6, marginBottom: spacing.gapSm }}>
+            You&apos;ll be paired with other students for a face-to-face negotiation.
+            Only continue if you are in class and ready to negotiate right now.
+          </p>
+          {confError && (
+            <p style={{ color: '#c00', marginBottom: spacing.gapSm }}>{confError}</p>
+          )}
+          <div style={{ display: 'flex', gap: spacing.gapBtn }}>
+            <button onClick={handleConfirmReady} disabled={confLoading}>
+              {confLoading ? 'Confirming…' : "Yes, I'm ready"}
+            </button>
+            <button
+              onClick={() => setPhase({ name: 'hold' })}
+              disabled={confLoading}
+              style={{ background: 'none', border: '1px solid #ccc' }}
+            >
+              Not now
+            </button>
+          </div>
+        </main>
+      )}
+
+      {phase.name === 'attendance-code' && (
+        <main style={{ padding: layout.pagePad, maxWidth: '540px', margin: '0 auto' }}>
+          <h1 style={{ marginTop: 0 }}>Enter attendance code</h1>
+          <p style={{ lineHeight: 1.6, marginBottom: layout.pagePad }}>
+            Enter the code your instructor is displaying.
+          </p>
+          <form onSubmit={handleAttendanceCode}>
+            <input
+              value={codeValue}
+              onChange={e => setCodeValue(e.target.value.toUpperCase())}
+              maxLength={6}
+              placeholder="e.g. ABJKM"
+              autoFocus
+              autoCapitalize="characters"
+              spellCheck={false}
+              disabled={codeLoading}
+              style={{
+                fontSize:     '2rem',
+                letterSpacing: '0.25em',
+                width:         '100%',
+                padding:       '0.5rem 0.75rem',
+                boxSizing:     'border-box',
+                fontFamily:    'monospace',
+                textTransform: 'uppercase',
+              }}
+            />
+            {codeError && (
+              <p style={{ color: '#c00', marginTop: '0.75rem' }}>{codeError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={codeLoading || codeValue.trim().length < 4}
+              style={{ marginTop: spacing.gapMd }}
+            >
+              {codeLoading ? 'Checking…' : 'Submit'}
+            </button>
+          </form>
+        </main>
+      )}
+
+      {phase.name === 'waiting-room' && (
+        <WaitingRoom
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
+          db={db}
+          rtdb={rtdb}
+          onMatched={(groupId) => setPhase({ name: 'group-reveal', groupId })}
+        />
+      )}
+
+      {phase.name === 'group-reveal' && (
+        <GroupReveal
+          groupId={phase.groupId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
+          roleConfig={winemasterConfig}
+          db={db}
+          rtdb={rtdb}
+          functions={functions}
+          onContinue={() => setPhase({ name: 'off-platform', groupId: phase.groupId })}
+        />
+      )}
+
+      {phase.name === 'off-platform' && (
+        <OffPlatformHolding
+          groupId={phase.groupId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
+          db={db}
+          onReportOutcome={(isLead) => setPhase({ name: 'outcome-reporting', groupId: phase.groupId, isLead })}
+        />
+      )}
+
+      {phase.name === 'outcome-reporting' && (
+        <OutcomeReporting
+          groupId={phase.groupId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
+          isLead={phase.isLead}
+          args={{}}
+          onComplete={() => setPhase({ name: 'results', groupId: phase.groupId })}
+        />
+      )}
+
+      {phase.name === 'results' && (
+        <Results
+          groupId={phase.groupId}
+          participantId={participantId}
+          gameInstanceId={gameInstanceId}
+          roleConfig={winemasterConfig}
+          formatOutcome={formatWinemasterOutcome}
+          db={db}
+          rtdb={rtdb}
+          functions={functions}
+        />
       )}
     </div>
   )
