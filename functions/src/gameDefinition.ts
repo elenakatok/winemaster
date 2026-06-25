@@ -66,29 +66,23 @@ function readReservation(configData: Record<string, unknown> | undefined, key: s
 }
 
 /**
- * Game-supplied scoring function. The library calls this; it never inspects the formula.
+ * Returns the realized value (winemaster) or realized cost (home_base) plus the resulting surplus.
+ * Single source of math — computeRawScore delegates here.
  *
- * Returns surplus vs. reservation value (can be negative for losing deals).
- * Default reservations: WineMaster $7,200,000 · HomeBase $8,400,000.
- * configData overrides these if the instructor has saved custom values in Settings.
- *
- * Walk-away (null outcome): scored at exactly the reservation value.
- * Winemaster's formulas are surplus-based (realized − reservation), so at BATNA the
- * realized value equals the reservation and the surplus is 0. That 0 comes from the
- * formula, not a hardcoded constant — ensuring a future non-surplus game gets the
- * correct non-zero walk-away score automatically.
- * Rounding: nearest dollar at the final step only.
+ * Walk-away (null outcome): value_or_cost equals the reservation price; raw_score = 0.
+ * Rounding: nearest dollar at the value/cost step only.
  */
-export function computeRawScore(roleKey: string, outcome: Outcome | null, configData?: Record<string, unknown>): number {
+export function computeScoreBreakdown(
+  roleKey: string,
+  outcome: Outcome | null,
+  configData?: Record<string, unknown>,
+): { value_or_cost: number; raw_score: number } {
   const wmRes = readReservation(configData, 'winemaster_reservation_price', WM_RESERVATION_DEFAULT)
   const hbRes = readReservation(configData, 'home_base_reservation_price',  HB_RESERVATION_DEFAULT)
 
   if (outcome === null) {
-    // Walk-away: score as if realized exactly the reservation value.
-    //   WM surplus formula: realized_value − wmRes → wmRes − wmRes = 0
-    //   HB surplus formula: hbRes − cost         → hbRes − hbRes = 0
-    const walkAwayValue = roleKey === 'winemaster' ? wmRes : hbRes
-    return roleKey === 'winemaster' ? walkAwayValue - wmRes : hbRes - walkAwayValue
+    const res = roleKey === 'winemaster' ? wmRes : hbRes
+    return { value_or_cost: res, raw_score: 0 }
   }
 
   const S = outcome['shares'] as number
@@ -97,12 +91,16 @@ export function computeRawScore(roleKey: string, outcome: Outcome | null, config
   const L = outcome['liability'] as number
 
   if (roleKey === 'winemaster') {
-    // W = S·50·m_W(V) + (B ? seat_W(V) : 0) − 0.15·L − wmRes
-    return Math.round(S * 50 * M_W[V] + (B ? SEAT_W[V] : 0) - 0.15 * L) - wmRes
+    const voc = Math.round(S * 50 * M_W[V] + (B ? SEAT_W[V] : 0) - 0.15 * L)
+    return { value_or_cost: voc, raw_score: voc - wmRes }
   } else {
-    // H = hbRes − (S·50·m_H(V) + (B ? 350,000 : 0) + liab_H(L))
-    return hbRes - Math.round(S * 50 * M_H[V] + (B ? 350_000 : 0) + liabH(L))
+    const voc = Math.round(S * 50 * M_H[V] + (B ? 350_000 : 0) + liabH(L))
+    return { value_or_cost: voc, raw_score: hbRes - voc }
   }
+}
+
+export function computeRawScore(roleKey: string, outcome: Outcome | null, configData?: Record<string, unknown>): number {
+  return computeScoreBreakdown(roleKey, outcome, configData).raw_score
 }
 
 // ── GameDefinition (full contract for game-server factories) ─────────────────
@@ -114,6 +112,7 @@ export const winemasterGameDef: GameDefinition = {
   composition: { winemaster: 2, home_base: 2 },
   outcomeSchema: winemasterSchema,
   computeRawScore,
+  computeScoreBreakdown,
   reservations: { winemaster: 7_200_000, home_base: 8_400_000 },
   corsOrigins: ['https://winemaster.mygames.live'],
   classroom: { callbackSecretId: 'CLASSROOM_CALLBACK_SECRET' },

@@ -60,6 +60,7 @@ export const getDebriefQuestions                = makeGetDebriefQuestions(winema
 export const submitKnowledgeCheck               = makeSubmitKnowledgeCheck(winemasterGameDef)
 export const submitStaticKnowledgeCheckQuestion = makeSubmitStaticKnowledgeCheckQuestion(winemasterGameDef)
 export const getInfoUrls                        = makeGetInfoUrls(winemasterGameDef)
+export { getReportData } from './getReportData'
 
 // ── Non-game onRequest endpoints (kept as-is; not converted) ──────────────────
 

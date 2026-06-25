@@ -3,6 +3,7 @@ import { auth, functions } from './firebase'
 import Play from './pages/Play'
 import InstructorDashboard from './pages/InstructorDashboard'
 import Configure from './pages/Configure'
+import Reports from './pages/Reports'
 import { SettingsPage } from '@mygames/game-ui'
 
 const winemasterRoleLabels: Record<string, string> = {
@@ -28,6 +29,7 @@ export default function App() {
         <Route path="/"          element={<Play />} />
         <Route path="/dashboard" element={<InstructorDashboard />} />
         <Route path="/configure" element={<Configure />} />
+        <Route path="/reports"   element={<Reports />} />
         <Route path="/settings"  element={
           <SettingsPage
             title="Settings — Winemaster"
