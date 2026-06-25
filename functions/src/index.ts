@@ -10,14 +10,17 @@ import {
   makeGetRoster,
   makeSyncRoster,
   makeTriggerMatching,
+  makeStartNegotiation,
   makeSubmitLeadOutcome,
   makeSubmitConfirmation,
+  makeSubmitInstructorOutcome,
   makeFinalizeInstance,
   makePushResultsToClassroom,
   makeGetGameConfig,
   makeUpdateGameConfig,
   validateKCGate,
   makeGetStudentPrepQuestions,
+  makeGetDebriefQuestions,
   makeSubmitKnowledgeCheck,
   makeSubmitStaticKnowledgeCheckQuestion,
   makeGetInfoUrls,
@@ -43,14 +46,17 @@ export const generateAttendanceCode = makeGenerateAttendanceCode(winemasterGameD
 export const verifyAttendanceCode   = makeVerifyAttendanceCode(winemasterGameDef)
 export const getRoster              = makeGetRoster(winemasterGameDef)
 export const syncRoster             = makeSyncRoster(winemasterGameDef)
-export const triggerMatching        = makeTriggerMatching(winemasterGameDef)
-export const submitLeadOutcome      = makeSubmitLeadOutcome(winemasterGameDef)
-export const submitConfirmation     = makeSubmitConfirmation(winemasterGameDef)
+export const triggerMatching            = makeTriggerMatching(winemasterGameDef)
+export const startNegotiation           = makeStartNegotiation(winemasterGameDef)
+export const submitLeadOutcome          = makeSubmitLeadOutcome(winemasterGameDef)
+export const submitConfirmation         = makeSubmitConfirmation(winemasterGameDef)
+export const submitInstructorOutcome    = makeSubmitInstructorOutcome(winemasterGameDef)
 export const finalizeInstance       = makeFinalizeInstance(winemasterGameDef)
 export const pushResultsToClassroom = makePushResultsToClassroom(winemasterGameDef)
 export const getGameConfig          = makeGetGameConfig(winemasterGameDef)
 export const updateGameConfig       = makeUpdateGameConfig(winemasterGameDef)
 export const getStudentPrepQuestions            = makeGetStudentPrepQuestions(winemasterGameDef)
+export const getDebriefQuestions                = makeGetDebriefQuestions(winemasterGameDef)
 export const submitKnowledgeCheck               = makeSubmitKnowledgeCheck(winemasterGameDef)
 export const submitStaticKnowledgeCheckQuestion = makeSubmitStaticKnowledgeCheckQuestion(winemasterGameDef)
 export const getInfoUrls                        = makeGetInfoUrls(winemasterGameDef)

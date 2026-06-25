@@ -13,7 +13,8 @@ export const seedMatchTest = onRequest(async (req, res) => {
     return
   }
 
-  const body = req.body as { game_instance_id?: unknown; participants?: unknown }
+  // Accept both flat { ... } and v2 onCall-style { data: { ... } } bodies from test helpers.
+  const body = (req.body?.data ?? req.body) as { game_instance_id?: unknown; participants?: unknown }
 
   if (typeof body.game_instance_id !== 'string' || !body.game_instance_id) {
     res.status(400).json({ error: 'game_instance_id required' })
@@ -78,7 +79,8 @@ export const seedGroupForTest = onRequest(async (req, res) => {
     return
   }
 
-  const body = req.body as {
+  // Accept both flat { ... } and v2 onCall-style { data: { ... } } bodies from test helpers.
+  const body = (req.body?.data ?? req.body) as {
     game_instance_id?: unknown
     group_id?: unknown
     lead_id?: unknown

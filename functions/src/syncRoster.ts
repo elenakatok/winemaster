@@ -41,8 +41,14 @@ export const syncRoster = onRequest(
     const rosterUrl      = (devBody?.roster_url      as string | undefined) ?? process.env.CLASSROOM_ROSTER_URL      ?? ''
     const callbackSecret = (devBody?.callback_secret as string | undefined) ?? process.env.CLASSROOM_CALLBACK_SECRET ?? ''
 
+    console.log('[syncRoster] config check', {
+      has_roster_url:      !!rosterUrl,
+      has_callback_secret: !!callbackSecret,
+      game_instance_id:    gameInstanceId,
+    })
+
     if (!rosterUrl || !callbackSecret) {
-      console.error('syncRoster: CLASSROOM_ROSTER_URL or CLASSROOM_CALLBACK_SECRET not configured')
+      console.error('[syncRoster] missing config: CLASSROOM_ROSTER_URL or CLASSROOM_CALLBACK_SECRET not set')
       res.status(500).json({ error: 'Classroom roster not configured' })
       return
     }
@@ -53,10 +59,13 @@ export const syncRoster = onRequest(
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${callbackSecret}` },
         body: JSON.stringify({ game_instance_id: gameInstanceId }),
       })
+      console.log('[syncRoster] classroom response status:', rosterRes.status)
       if (!rosterRes.ok) {
-        const errData = await rosterRes.json().catch(() => ({}) as Record<string, unknown>)
-        const errMsg = (errData as Record<string, unknown>).error as string | undefined
-        res.status(502).json({ error: `Classroom roster error: ${errMsg ?? String(rosterRes.status)}` })
+        const errText = await rosterRes.text().catch(() => '')
+        console.error('[syncRoster] classroom error response:', { status: rosterRes.status, body: errText })
+        let errMsg: string | undefined
+        try { errMsg = (JSON.parse(errText) as Record<string, unknown>).error as string | undefined } catch { /* not JSON */ }
+        res.status(502).json({ error: `Classroom roster error: ${errMsg ?? (errText || String(rosterRes.status))}` })
         return
       }
 
@@ -112,7 +121,7 @@ export const syncRoster = onRequest(
       console.log(`syncRoster: synced=${synced} skipped=${skipped} for instance ${gameInstanceId}`)
       res.json({ ok: true, synced, skipped })
     } catch (err) {
-      console.error('syncRoster error:', err)
+      console.error('[syncRoster] unexpected error:', err instanceof Error ? err.stack : JSON.stringify(err))
       res.status(500).json({ error: 'Internal error' })
     }
   },
