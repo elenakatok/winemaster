@@ -6,6 +6,13 @@ import { computeScoreBreakdown, winemasterGameDef } from './gameDefinition'
 
 const VALID_ROLES = new Set(['winemaster', 'home_base'])
 
+// Text questions from prepDefaults — read once at module load.
+const TEXT_QUESTIONS = (winemasterGameDef.prepDefaults ?? [])
+  .filter(q => q.format === 'text' && !q.hidden)
+  .map(q => ({ field: q.field, prompt: q.prompt, role_target: q.role_target }))
+
+const TEXT_FIELDS = TEXT_QUESTIONS.map(q => q.field)
+
 export type ReportRow = {
   participant_id: string
   display_name: string
@@ -17,6 +24,8 @@ export type ReportRow = {
   liability: number | null
   value_or_cost: number | null
   raw_score: number | null
+  /** Keyed by question field; only present when the student submitted a non-empty answer. */
+  text_answers: Record<string, string>
 }
 
 export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, async (request) => {
@@ -80,6 +89,15 @@ export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, asy
         value_or_cost = breakdown.value_or_cost
       }
 
+      // Collect text question answers from the participant doc.
+      const text_answers: Record<string, string> = {}
+      for (const field of TEXT_FIELDS) {
+        const val = d[field]
+        if (typeof val === 'string' && val.trim()) {
+          text_answers[field] = val.trim()
+        }
+      }
+
       rows.push({
         participant_id: pdoc.id,
         display_name,
@@ -91,6 +109,7 @@ export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, asy
         liability:  outcome ? (outcome['liability']  as number)  : null,
         value_or_cost,
         raw_score: d['raw_score'] as number,
+        text_answers,
       })
     }
 
@@ -101,7 +120,7 @@ export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, asy
       return a.display_name.localeCompare(b.display_name)
     })
 
-    return { ok: true as const, rows }
+    return { ok: true as const, rows, questions: TEXT_QUESTIONS }
   } catch (err) {
     if (err instanceof HttpsError) throw err
     console.error('[getReportData] error:', err)

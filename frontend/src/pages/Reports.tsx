@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { httpsCallable } from 'firebase/functions'
 import { signInWithCustomToken, signOut } from 'firebase/auth'
@@ -7,9 +7,15 @@ import {
   SortableTable,
   ReportBoard,
   GameHeader,
+  ExportModal,
+  buildStudentTextExport,
   type SortableColumn,
   type ReportTileConfig,
+  type AiTextRow,
 } from '@mygames/game-ui'
+import { SurplusScatterSVG, type ScatterPoint } from '../components/SurplusScatterSVG'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ReportRow = {
   participant_id: string
@@ -22,7 +28,10 @@ type ReportRow = {
   liability: number | null
   value_or_cost: number | null
   raw_score: number | null
+  text_answers: Record<string, string>
 }
+
+type QuestionMeta = { field: string; prompt: string; role_target: string }
 
 // ── Vesting sort order ────────────────────────────────────────────────────────
 
@@ -34,7 +43,7 @@ const VESTING_ORDER: Record<string, number> = {
 
 const vestingRank = (v: string | null) => v == null ? Infinity : (VESTING_ORDER[v] ?? 3)
 
-// ── Column definitions ────────────────────────────────────────────────────────
+// ── Contract-outcome table columns ───────────────────────────────────────────
 
 type SortKey = 'name' | 'group' | 'role' | 'shares' | 'vesting' | 'board_seat' | 'liability' | 'value_or_cost' | 'raw_score'
 
@@ -54,78 +63,52 @@ function fmtSigned(n: number | null): string {
 
 const COLUMNS: readonly SortableColumn<ReportRow, SortKey>[] = [
   {
-    key: 'name',
-    label: 'Name',
-    headerStyle: { minWidth: 140 },
+    key: 'name', label: 'Name', headerStyle: { minWidth: 140 },
     render: r => r.display_name,
     compare: (a, b) => a.display_name.localeCompare(b.display_name),
   },
   {
-    key: 'group',
-    label: 'Group #',
+    key: 'group', label: 'Group #',
     render: r => r.group_number ?? '—',
     compare: (a, b) => (a.group_number ?? Infinity) - (b.group_number ?? Infinity),
   },
   {
-    key: 'role',
-    label: 'Role',
+    key: 'role', label: 'Role',
     render: r => r.role === 'winemaster' ? 'Winemaster' : 'Home Base',
     compare: (a, b) => a.role.localeCompare(b.role),
   },
   {
-    key: 'shares',
-    label: 'Shares',
-    nullsLast: true,
-    isNull: r => r.shares === null,
+    key: 'shares', label: 'Shares', nullsLast: true, isNull: r => r.shares === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(r.shares)}</span>,
     compare: (a, b) => (a.shares ?? 0) - (b.shares ?? 0),
   },
   {
-    key: 'vesting',
-    label: 'Vesting',
-    nullsLast: true,
-    isNull: r => r.vesting === null,
+    key: 'vesting', label: 'Vesting', nullsLast: true, isNull: r => r.vesting === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => r.vesting ?? '—',
     compare: (a, b) => vestingRank(a.vesting) - vestingRank(b.vesting),
   },
   {
-    key: 'board_seat',
-    label: 'Board seat',
-    nullsLast: true,
-    isNull: r => r.board_seat === null,
+    key: 'board_seat', label: 'Board seat', nullsLast: true, isNull: r => r.board_seat === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => r.board_seat === null ? '—' : r.board_seat ? 'Yes' : 'No',
     compare: (a, b) => (a.board_seat ? 1 : 0) - (b.board_seat ? 1 : 0),
   },
   {
-    key: 'liability',
-    label: 'Liability',
-    nullsLast: true,
-    isNull: r => r.liability === null,
+    key: 'liability', label: 'Liability', nullsLast: true, isNull: r => r.liability === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(r.liability)}</span>,
     compare: (a, b) => (a.liability ?? 0) - (b.liability ?? 0),
   },
   {
-    key: 'value_or_cost',
-    label: 'Value / Cost',
-    nullsLast: true,
-    isNull: r => r.value_or_cost === null,
+    key: 'value_or_cost', label: 'Value / Cost', nullsLast: true, isNull: r => r.value_or_cost === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
-    render: r => (
-      <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-        {fmt(r.value_or_cost)}
-      </span>
-    ),
+    render: r => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(r.value_or_cost)}</span>,
     compare: (a, b) => (a.value_or_cost ?? 0) - (b.value_or_cost ?? 0),
   },
   {
-    key: 'raw_score',
-    label: 'Raw score',
-    nullsLast: true,
-    isNull: r => r.raw_score === null,
+    key: 'raw_score', label: 'Raw score', nullsLast: true, isNull: r => r.raw_score === null,
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtSigned(r.raw_score)}</span>,
     compare: (a, b) => (a.raw_score ?? 0) - (b.raw_score ?? 0),
@@ -147,7 +130,6 @@ export default function Reports() {
   const [sessionReady, setSessionReady] = useState(false)
   const [authError,    setAuthError]    = useState<string | null>(null)
 
-  // Propagate URL params to same-origin links so the session follows navigation.
   const makeLink = (base: string): string => {
     if (devGameInstanceId) return `${base}?_dev_game_instance_id=${encodeURIComponent(devGameInstanceId)}`
     if (tokenParam && gameInstanceIdParam)
@@ -155,32 +137,23 @@ export default function Reports() {
     return base
   }
 
-  // ── Auth bootstrap (same pattern as shared InstructorDashboard) ────────────
+  // ── Auth bootstrap ─────────────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false
     const establish = async () => {
       await auth.authStateReady()
       if (cancelled) return
-
       if (auth.currentUser) {
         const expectedUid = devGameInstanceId
           ? `instructor_${devGameInstanceId}`
-          : gameInstanceIdParam
-            ? `instructor_${gameInstanceIdParam}`
-            : null
-        if (expectedUid && auth.currentUser.uid === expectedUid) {
-          setSessionReady(true)
-          return
-        }
+          : gameInstanceIdParam ? `instructor_${gameInstanceIdParam}` : null
+        if (expectedUid && auth.currentUser.uid === expectedUid) { setSessionReady(true); return }
         await signOut(auth)
         if (cancelled) return
       }
-
       const args = devGameInstanceId
         ? { _dev: { game_instance_id: devGameInstanceId } }
-        : tokenParam
-          ? { token: tokenParam }
-          : null
+        : tokenParam ? { token: tokenParam } : null
       if (!args) { setAuthError('No launch token found.'); return }
       try {
         const fn = httpsCallable<object, { customToken: string }>(functions, 'getInstructorSession')
@@ -199,18 +172,19 @@ export default function Reports() {
   }, [devGameInstanceId, tokenParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Data load ──────────────────────────────────────────────────────────────
-  const [rows,    setRows]    = useState<ReportRow[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState<string | null>(null)
-  const [modalOpen, setModalOpen] = useState(false)
+  const [rows,      setRows]      = useState<ReportRow[] | null>(null)
+  const [questions, setQuestions] = useState<QuestionMeta[]>([])
+  const [loading,   setLoading]   = useState(false)
+  const [error,     setError]     = useState<string | null>(null)
 
   useEffect(() => {
     if (!sessionReady) return
     setLoading(true)
     setError(null)
-    const fn = httpsCallable<object, { ok: boolean; rows: ReportRow[] }>(functions, 'getReportData')
+    const fn = httpsCallable<object, { ok: boolean; rows: ReportRow[]; questions: QuestionMeta[] }>(functions, 'getReportData')
     fn({}).then(r => {
       setRows(r.data.rows)
+      setQuestions(r.data.questions)
       setLoading(false)
     }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : 'Failed to load report data.')
@@ -218,8 +192,41 @@ export default function Reports() {
     })
   }, [sessionReady])
 
+  // ── Scatter data — derived from rows, no extra fetch ───────────────────────
+  const scatterSvgRef = useRef<SVGSVGElement>(null)
+
+  const scatterPoints: ScatterPoint[] = (() => {
+    if (!rows) return []
+    const groupMap = new Map<number, { wm: number | null; hb: number | null }>()
+    for (const r of rows) {
+      if (r.group_number == null || r.raw_score == null) continue
+      const entry = groupMap.get(r.group_number) ?? { wm: null, hb: null }
+      if (r.role === 'winemaster') entry.wm = entry.wm ?? r.raw_score
+      else if (r.role === 'home_base') entry.hb = entry.hb ?? r.raw_score
+      groupMap.set(r.group_number, entry)
+    }
+    return Array.from(groupMap.entries())
+      .filter(([, s]) => s.wm !== null && s.hb !== null)
+      .map(([n, s]) => ({ x: s.hb!, y: s.wm!, label: `G${n}` }))
+      .sort((a, b) => a.label.localeCompare(b.label))
+  })()
+
+  // ── Modal state ────────────────────────────────────────────────────────────
+  const [contractOpen,  setContractOpen]  = useState(false)
+  const [activeExport,  setActiveExport]  = useState<{ title: string; text: string } | null>(null)
+
   // ── Tile config ────────────────────────────────────────────────────────────
   const finalized = rows?.length ?? 0
+
+  const projectScatter = () => {
+    if (!scatterSvgRef.current) return
+    const svgHtml = scatterSvgRef.current.outerHTML
+    const win = window.open('', 'surplus-scatter', 'width=960,height=600')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html><html><head><title>Surplus Scatter</title></head><body style="margin:0;padding:1rem;background:#fff;">${svgHtml}</body></html>`)
+    win.document.close()
+  }
+
   const tiles: ReportTileConfig[] = [
     {
       id: 'contract-outcomes',
@@ -229,10 +236,39 @@ export default function Reports() {
         : <span style={{ fontSize: '0.9rem', color: '#555' }}>
             {finalized} participant{finalized !== 1 ? 's' : ''} finalized
           </span>,
-      onOpen: () => setModalOpen(true),
+      onOpen: () => setContractOpen(true),
       disabled: !rows || rows.length === 0,
       actionLabel: 'Open ↗',
     },
+    {
+      id: 'surplus-scatter',
+      title: 'Surplus Scatter — WM vs. HB',
+      preview: <SurplusScatterSVG points={scatterPoints} svgRef={scatterSvgRef} />,
+      onOpen: projectScatter,
+      disabled: scatterPoints.length === 0,
+      actionLabel: 'Project ↗',
+    },
+    // One tile per text question (6 total: 3 WM + 3 HB).
+    ...questions.map(q => {
+      const roleLabel = ROLE_LABELS[q.role_target] ?? q.role_target
+      const tileTitle = `${roleLabel}: ${q.prompt}`
+      const qRows: AiTextRow[] = (rows ?? [])
+        .filter(r => r.role === q.role_target && r.text_answers[q.field])
+        .map(r => ({ name: r.display_name, raw_score: r.raw_score, answer: r.text_answers[q.field] }))
+      const text = buildStudentTextExport(tileTitle, qRows)
+      return {
+        id: q.field,
+        title: tileTitle,
+        preview: qRows.length === 0
+          ? <span style={{ color: '#94a3b8', fontSize: '0.85rem' }}>No responses yet.</span>
+          : <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111' }}>
+              {qRows.length} response{qRows.length !== 1 ? 's' : ''}
+            </span>,
+        onOpen: () => setActiveExport({ title: tileTitle, text }),
+        disabled: !rows,
+        actionLabel: 'Open ↗',
+      } satisfies ReportTileConfig
+    }),
   ]
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -264,9 +300,9 @@ export default function Reports() {
       </main>
 
       {/* ── Contract outcomes modal ── */}
-      {modalOpen && (
+      {contractOpen && (
         <div
-          onClick={() => setModalOpen(false)}
+          onClick={() => setContractOpen(false)}
           style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
             display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
@@ -283,7 +319,7 @@ export default function Reports() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
               <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>Contract Outcomes — per participant</h3>
               <button
-                onClick={() => setModalOpen(false)}
+                onClick={() => setContractOpen(false)}
                 style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: '#666' }}
               >
                 ✕
@@ -302,6 +338,15 @@ export default function Reports() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── AI text export modal (shared across all text tiles) ── */}
+      {activeExport && (
+        <ExportModal
+          title={activeExport.title}
+          text={activeExport.text}
+          onClose={() => setActiveExport(null)}
+        />
       )}
     </div>
   )
