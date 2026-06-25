@@ -31,9 +31,20 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ data: body }),
   })
-  return { status: r.status, body: await r.json() }
+  const json = await r.json()
+  // Unwrap Firebase v2 onCall protocol: success → { result: ... }, error → { error: { message, status } }
+  let unwrapped
+  if (json.result !== undefined) {
+    unwrapped = json.result
+  } else if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    unwrapped = { ok: false, error: errMsg }
+  } else {
+    unwrapped = json  // onRequest (seedFunctions) return flat JSON
+  }
+  return { status: r.status, body: unwrapped }
 }
 
 function testId(name) {
@@ -215,19 +226,19 @@ async function testValidationError() {
     outcome: { shares: 999999, vesting: 'Pro Rata', board_seat: true, liability: 5000 },
   })
   ok('400 on shares > max', r1.status === 400)
-  ok('details contains shares error', Array.isArray(r1.body.details) && r1.body.details.some(e => e.includes('shares')))
+  ok('details contains shares error', r1.body.error.includes('shares'))
 
   const r2 = await post('/submitLeadOutcome', {
     _test: { participant_id: W1, game_instance_id: gameId },
     outcome: { shares: 5000, vesting: 'Invalid Option', board_seat: true, liability: 5000 },
   })
-  ok('400 on invalid vesting enum', r2.status === 400 && Array.isArray(r2.body.details))
+  ok('400 on invalid vesting enum', r2.status === 400 && r2.body.error.includes('vesting'))
 
   const r3 = await post('/submitLeadOutcome', {
     _test: { participant_id: W1, game_instance_id: gameId },
     outcome: { shares: 5000, vesting: 'Immediate', board_seat: true },
   })
-  ok('400 on missing liability field', r3.status === 400 && r3.body.details.some(e => e.includes('liability')))
+  ok('400 on missing liability field', r3.status === 400 && r3.body.error.includes('liability'))
 
   const gAfter = await readGroup(gameId)
   ok('group doc unchanged (status: matched)', gAfter.status === 'matched')

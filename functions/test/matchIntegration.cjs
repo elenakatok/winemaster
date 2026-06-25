@@ -13,7 +13,7 @@ process.env.FIREBASE_DATABASE_EMULATOR_HOST = 'localhost:9002'
 const admin = require('firebase-admin')
 admin.initializeApp({
   projectId: 'winemaster-mygames-live',
-  databaseURL: 'http://localhost:9002?ns=winemaster-mygames-live',
+  databaseURL: 'https://winemaster-mygames-live-default-rtdb.firebaseio.com',
 })
 const db = admin.firestore()
 
@@ -21,9 +21,16 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ data: body }),
   })
-  return r.json()
+  const json = await r.json()
+  // Unwrap Firebase v2 onCall protocol
+  if (json.result !== undefined) return json.result
+  if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    return { ok: false, error: errMsg }
+  }
+  return json  // onRequest (seedMatchTest) returns flat JSON
 }
 
 function makeParticipants(winemasters, homeBases) {

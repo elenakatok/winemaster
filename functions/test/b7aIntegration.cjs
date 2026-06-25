@@ -14,7 +14,7 @@ process.env.FIRESTORE_EMULATOR_HOST = 'localhost:8082'
 process.env.FIREBASE_DATABASE_EMULATOR_HOST = 'localhost:9002'
 
 const admin = require('firebase-admin')
-admin.initializeApp({ projectId: 'winemaster-mygames-live', databaseURL: 'http://localhost:9002/?ns=winemaster-mygames-live' })
+admin.initializeApp({ projectId: 'winemaster-mygames-live', databaseURL: 'https://winemaster-mygames-live-default-rtdb.firebaseio.com' })
 const db   = admin.firestore()
 const rtdb = admin.database()
 
@@ -31,9 +31,19 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body:    JSON.stringify({ data: body }),
   })
-  return { status: r.status, body: await r.json() }
+  const json = await r.json()
+  let unwrapped
+  if (json.result !== undefined) {
+    unwrapped = json.result
+  } else if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    unwrapped = { ok: false, error: errMsg }
+  } else {
+    unwrapped = json
+  }
+  return { status: r.status, body: unwrapped }
 }
 
 function uid() { return `b7a_${Date.now()}_${Math.floor(Math.random() * 9999)}` }

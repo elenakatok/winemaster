@@ -27,9 +27,19 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ data: body }),
   })
-  return { status: r.status, body: await r.json() }
+  const json = await r.json()
+  let unwrapped
+  if (json.result !== undefined) {
+    unwrapped = json.result
+  } else if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    unwrapped = { ok: false, error: errMsg }
+  } else {
+    unwrapped = json
+  }
+  return { status: r.status, body: unwrapped }
 }
 
 function uid() { return `b5_${Date.now()}_${Math.floor(Math.random() * 9999)}` }
@@ -123,38 +133,37 @@ async function testFinalizeOk() {
   ok('ok:true', r.body.ok === true)
   ok('scored:10', r.body.scored === 10, `got ${r.body.scored}`)
 
-  // Winemaster pool (value-sense): deal [2375000,2375000] vs walk-away [0,0].
-  // With n=4 symmetric pairs, z = ±√3/2 ≈ ±0.86603.
+  // Winemaster pool: deal surplus = S·50·0.88+250000−0.15·L−wmRes = -4_825_000,
+  // walk-away surplus = 0. With n=4 symmetric pairs, z = ±√3/2 ≈ ±0.86603.
+  // Deal is BELOW reservation → lower z (worse) than walk-away.
   for (const pid of ['w1','w2']) {
     const p = await readParticipant(gameId, pid)
-    ok(`${pid} raw=2_375_000`, p.raw_score === 2_375_000, p.raw_score)
-    ok(`${pid} normalized≈+0.866`, approxEq(p.normalized_score, 0.86603), p.normalized_score)
+    ok(`${pid} raw=−4_825_000`, p.raw_score === -4_825_000, p.raw_score)
+    ok(`${pid} normalized≈−0.866`, approxEq(p.normalized_score, -0.86603), p.normalized_score)
     ok(`${pid} finalized_at set`, p.finalized_at != null)
   }
   for (const pid of ['w3','w4']) {
     const p = await readParticipant(gameId, pid)
-    ok(`${pid} raw=0 (PROVISIONAL)`, p.raw_score === 0, p.raw_score)
-    ok(`${pid} normalized≈−0.866`, approxEq(p.normalized_score, -0.86603), p.normalized_score)
+    ok(`${pid} raw=0 (walk-away surplus)`, p.raw_score === 0, p.raw_score)
+    ok(`${pid} normalized≈+0.866`, approxEq(p.normalized_score, 0.86603), p.normalized_score)
   }
   const w5 = await readParticipant(gameId, 'w5')
   ok('w5 (no-show) raw=null',        w5.raw_score === null)
   ok('w5 (no-show) normalized=−2',   w5.normalized_score === -2)
   ok('w5 finalized_at set',          w5.finalized_at != null)
 
-  // Home base pool (cost-sense): deal raw=2_675_000 → signed=−2_675_000;
-  // walk-away raw=1_000_000 (PROVISIONAL) → signed=−1_000_000. Same ±√3/2 structure.
-  // deal HB: higher cost → lower z (worse). walk-away HB: lower placeholder → higher z (visibly wrong).
+  // Home base pool: deal surplus = hbRes − cost = 8_400_000 − 2_675_000 = 5_725_000,
+  // walk-away surplus = 0. Deal HB scores BETTER (+0.866) than walk-away (−0.866).
   for (const pid of ['h1','h2']) {
     const p = await readParticipant(gameId, pid)
-    ok(`${pid} raw=2_675_000 (unsigned)`, p.raw_score === 2_675_000, p.raw_score)
-    ok(`${pid} normalized≈−0.866`, approxEq(p.normalized_score, -0.86603), p.normalized_score)
+    ok(`${pid} raw=5_725_000`, p.raw_score === 5_725_000, p.raw_score)
+    ok(`${pid} normalized≈+0.866`, approxEq(p.normalized_score, 0.86603), p.normalized_score)
     ok(`${pid} finalized_at set`, p.finalized_at != null)
   }
   for (const pid of ['h3','h4']) {
     const p = await readParticipant(gameId, pid)
-    ok(`${pid} raw=1_000_000 (PROVISIONAL sentinel)`, p.raw_score === 1_000_000, p.raw_score)
-    // Visibly wrong: walk-away HB scores BETTER (+0.866) than deal HB (−0.866).
-    ok(`${pid} normalized≈+0.866 (PROVISIONAL — visibly wrong)`, approxEq(p.normalized_score, 0.86603), p.normalized_score)
+    ok(`${pid} raw=0 (walk-away surplus)`, p.raw_score === 0, p.raw_score)
+    ok(`${pid} normalized≈−0.866`, approxEq(p.normalized_score, -0.86603), p.normalized_score)
   }
   const h5 = await readParticipant(gameId, 'h5')
   ok('h5 (no-show) raw=null',        h5.raw_score === null)

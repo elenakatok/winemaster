@@ -62,9 +62,19 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ data: body }),
   })
-  return { status: r.status, body: await r.json() }
+  const json = await r.json()
+  let unwrapped
+  if (json.result !== undefined) {
+    unwrapped = json.result
+  } else if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    unwrapped = { ok: false, error: errMsg }
+  } else {
+    unwrapped = json
+  }
+  return { status: r.status, body: unwrapped }
 }
 
 // ── Firestore seed helpers ───────────────────────────────────────────────────
@@ -342,12 +352,11 @@ async function testHttpEndpointNoOp() {
 
   received = []
 
-  // Call without _dev.callback_url — emulator has no CLASSROOM_CALLBACK_URL env var set,
-  // so the function hits the no-op guard.
+  // Pass explicit empty callback_url to force the no-op guard regardless of env vars.
   const r = await post('/pushResultsToClassroom', {
     _dev: {
       game_instance_id: gameId,
-      // callback_url absent → falls through to env var → '' → no-op
+      callback_url: '',  // empty string → no-op (env var might be set in .env.local)
     },
   })
 

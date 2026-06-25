@@ -21,15 +21,16 @@
 //   T6: End-to-end join: syncRoster → assignRole → completePrep → confirmReady →
 //       generateAttendanceCode → verifyAttendanceCode → RTDB attending/ has role
 
-process.env.FIRESTORE_EMULATOR_HOST  = 'localhost:8082'
+process.env.FIRESTORE_EMULATOR_HOST         = 'localhost:8082'
 process.env.FIREBASE_DATABASE_EMULATOR_HOST = 'localhost:9002'
+process.env.FIREBASE_AUTH_EMULATOR_HOST     = 'localhost:9101'
 
 const http  = require('http')
 const admin = require('firebase-admin')
 
 admin.initializeApp({
   projectId:   'winemaster-mygames-live',
-  databaseURL: 'http://localhost:9002/?ns=winemaster-mygames-live',
+  databaseURL: 'https://winemaster-mygames-live-default-rtdb.firebaseio.com',
 })
 const db   = admin.firestore()
 const rtdb = admin.database()
@@ -78,9 +79,19 @@ async function post(path, body) {
   const r = await fetch(`${BASE}${path}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify(body),
+    body:    JSON.stringify({ data: body }),
   })
-  return { status: r.status, body: await r.json() }
+  const json = await r.json()
+  let unwrapped
+  if (json.result !== undefined) {
+    unwrapped = json.result
+  } else if (json.error !== undefined) {
+    const errMsg = typeof json.error === 'string' ? json.error : (json.error.message ?? JSON.stringify(json.error))
+    unwrapped = { ok: false, error: errMsg }
+  } else {
+    unwrapped = json
+  }
+  return { status: r.status, body: unwrapped }
 }
 
 function uid() { return `b8a_${Date.now()}_${Math.floor(Math.random() * 9999)}` }
@@ -468,9 +479,11 @@ async function t6() {
 
 async function rtdbAvailable() {
   try {
+    // .info/connected is WebSocket-only; use a real write/read probe instead.
+    const probe = rtdb.ref(`_probe/b8a_${Date.now()}`)
     await Promise.race([
-      rtdb.ref('.info/connected').get(),
-      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 2000)),
+      probe.set(1).then(() => probe.remove()),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 3000)),
     ])
     return true
   } catch { return false }
