@@ -52,9 +52,12 @@ if [[ -z "${services// }" ]]; then
   exit 0
 fi
 
-would=0   # deleted (or would-delete) count
-kept=0    # serving revisions kept
-skipped=0 # services skipped for safety
+would=0          # dry-run: revisions that WOULD be deleted
+deleted=0        # --delete: revisions actually deleted
+kept=0           # serving revisions kept
+skipped_svc=0    # services skipped (no identifiable serving revision)
+skipped_latest=0 # revisions skipped: Cloud Run won't delete the latest-created one
+skipped_other=0  # revisions skipped: some other delete error
 
 while IFS= read -r service; do
   [[ -z "$service" ]] && continue
@@ -67,7 +70,7 @@ while IFS= read -r service; do
   # SAFETY GUARD: no identifiable serving revision → skip entirely, never delete-all.
   if [[ -z "${keep// }" ]]; then
     echo "⚠️  $service: no serving revision identified — SKIPPING (no deletes for this service)."
-    skipped=$((skipped + 1))
+    skipped_svc=$((skipped_svc + 1))
     continue
   fi
 
@@ -84,14 +87,27 @@ while IFS= read -r service; do
         kept=$((kept + 1))
         ;;
       *)
-        if $DELETE; then
-          echo "   deleting     $rev"
-          # gcloud also refuses to delete a revision serving traffic — backstop.
-          gcloud run revisions delete "$rev" --region="$REGION" --project="$PROJECT" --quiet
-        else
+        if ! $DELETE; then
           echo "   WOULD delete $rev"
+          would=$((would + 1))
+        else
+          # Run the delete inside an `if` so a failure does NOT abort the sweep
+          # (set -e is suppressed for commands in an if-condition). Classify failures.
+          if err=$(gcloud run revisions delete "$rev" --region="$REGION" --project="$PROJECT" --quiet 2>&1); then
+            echo "   deleted      $rev"
+            deleted=$((deleted + 1))
+          elif printf '%s' "$err" | grep -qi "cannot be directly deleted\|latest created revision"; then
+            # Cloud Run refuses to delete the latest-created revision directly
+            # (e.g. a failed-deploy revision). It frees up after the next successful
+            # deploy makes a new latest; a later sweep removes it then.
+            echo "   skipped (latest-created, can't delete) $rev"
+            skipped_latest=$((skipped_latest + 1))
+          else
+            reason=$(printf '%s' "$err" | tr '\n' ' ' | sed 's/  */ /g')
+            echo "   skipped (delete failed) $rev — $reason"
+            skipped_other=$((skipped_other + 1))
+          fi
         fi
-        would=$((would + 1))
         ;;
     esac
   done <<< "$revisions"
@@ -99,8 +115,16 @@ done <<< "$services"
 
 echo
 if $DELETE; then
-  echo "Done. Deleted $would revision(s); kept $kept serving; skipped $skipped service(s)."
+  echo "Done. Deleted $deleted revision(s); kept $kept serving."
+  if (( skipped_latest > 0 )); then
+    echo "Skipped $skipped_latest 'latest-created' revision(s): Cloud Run won't delete a service's"
+    echo "  latest-created revision directly. These are freed by the NEXT successful deploy (it"
+    echo "  creates a new latest), then a later run of this script sweeps them. Skipping now is fine."
+  fi
+  (( skipped_other > 0 )) && echo "Skipped $skipped_other revision(s) due to other delete errors (see above)."
+  (( skipped_svc > 0 ))   && echo "Skipped $skipped_svc service(s) with no identifiable serving revision."
 else
-  echo "Dry-run complete. WOULD delete $would revision(s); would keep $kept serving; skipped $skipped service(s)."
-  echo "Reviewed it? Re-run with --delete to apply."
+  echo "Dry-run complete. WOULD delete $would revision(s); would keep $kept serving; skipped $skipped_svc service(s)."
+  echo "Re-run with --delete to apply. Latest-created revisions that Cloud Run refuses to delete"
+  echo "are auto-skipped (reported in the summary), not fatal."
 fi
