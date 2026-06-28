@@ -29,6 +29,7 @@ type ReportRow = {
   value_or_cost: number | null
   raw_score: number | null
   text_answers: Record<string, string>
+  notes: string | null
 }
 
 type QuestionMeta = { field: string; prompt: string; role_target: string }
@@ -45,7 +46,7 @@ const vestingRank = (v: string | null) => v == null ? Infinity : (VESTING_ORDER[
 
 // ── Contract-outcome table columns ───────────────────────────────────────────
 
-type SortKey = 'name' | 'group' | 'role' | 'shares' | 'vesting' | 'board_seat' | 'liability' | 'value_or_cost' | 'raw_score'
+type SortKey = 'name' | 'group' | 'role' | 'shares' | 'vesting' | 'board_seat' | 'liability' | 'value_or_cost' | 'raw_score' | 'notes'
 
 const ROLE_LABELS: Record<string, string> = {
   winemaster: 'Winemaster',
@@ -112,6 +113,15 @@ const COLUMNS: readonly SortableColumn<ReportRow, SortKey>[] = [
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtSigned(r.raw_score)}</span>,
     compare: (a, b) => (a.raw_score ?? 0) - (b.raw_score ?? 0),
+  },
+  {
+    key: 'notes', label: 'Notes', headerStyle: { minWidth: 220 },
+    nullsLast: true, isNull: r => !r.notes || !r.notes.trim(),
+    tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
+    render: r => (r.notes && r.notes.trim())
+      ? <span style={{ whiteSpace: 'pre-wrap', display: 'inline-block', maxWidth: 360 }}>{r.notes}</span>
+      : '—',
+    compare: (a, b) => (a.notes ?? '').localeCompare(b.notes ?? ''),
   },
 ]
 

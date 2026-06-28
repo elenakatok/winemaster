@@ -26,6 +26,8 @@ export type ReportRow = {
   raw_score: number | null
   /** Keyed by question field; only present when the student submitted a non-empty answer. */
   text_answers: Record<string, string>
+  /** Optional free-text Notes from the negotiated outcome ('' or null when blank/no deal). */
+  notes: string | null
 }
 
 export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, async (request) => {
@@ -110,6 +112,7 @@ export const getReportData = onCall({ cors: winemasterGameDef.corsOrigins }, asy
         value_or_cost,
         raw_score: d['raw_score'] as number,
         text_answers,
+        notes: outcome ? ((outcome['notes'] as string | undefined) ?? null) : null,
       })
     }
 
