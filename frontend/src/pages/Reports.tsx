@@ -15,6 +15,12 @@ import {
 } from '@mygames/game-ui'
 import { SurplusScatterSVG, type ScatterPoint } from '../components/SurplusScatterSVG'
 
+// Pareto frontier endpoints (already in MILLIONS; x = WineMaster, y = Home Base) — from the target image.
+const WM_FRONTIER: { x: number; y: number }[] = [
+  { x: 2.99, y: 0.02 },  // WineMaster-favorable
+  { x: 0.01, y: 2.53 },  // HomeBase-favorable
+]
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type ReportRow = {
@@ -217,7 +223,7 @@ export default function Reports() {
     }
     return Array.from(groupMap.entries())
       .filter(([, s]) => s.wm !== null && s.hb !== null)
-      .map(([n, s]) => ({ x: s.hb!, y: s.wm!, label: `G${n}` }))
+      .map(([n, s]) => ({ x: s.wm!, y: s.hb!, label: `G${n}` }))
       .sort((a, b) => a.label.localeCompare(b.label))
   })()
 
@@ -253,7 +259,7 @@ export default function Reports() {
     {
       id: 'surplus-scatter',
       title: 'Surplus Scatter — WM vs. HB',
-      preview: <SurplusScatterSVG points={scatterPoints} svgRef={scatterSvgRef} />,
+      preview: <SurplusScatterSVG points={scatterPoints} frontier={WM_FRONTIER} svgRef={scatterSvgRef} />,
       onOpen: projectScatter,
       disabled: scatterPoints.length === 0,
       actionLabel: 'Project ↗',

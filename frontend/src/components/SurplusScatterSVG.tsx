@@ -5,10 +5,18 @@ const SM = { top: 68, left: 108, right: 50, bottom: 92 }
 const SPW = SW - SM.left - SM.right  // 742
 const SPH = SH - SM.top - SM.bottom  // 380
 
+const TO_M = 1_000_000  // raw scores are stored in dollars; the plot draws in millions.
+
 export interface ScatterPoint {
-  x: number  // Home Base raw score
-  y: number  // Winemaster raw score
+  x: number  // WineMaster raw score (dollars; converted to millions at plot boundary)
+  y: number  // Home Base raw score (dollars; converted to millions at plot boundary)
   label: string
+}
+
+/** Frontier endpoint — already in MILLIONS, x = WineMaster, y = Home Base. */
+export interface FrontierPoint {
+  x: number
+  y: number
 }
 
 function niceTicks(min: number, max: number, count = 6): number[] {
@@ -19,24 +27,29 @@ function niceTicks(min: number, max: number, count = 6): number[] {
   const step = norm < 1.5 ? mag : norm < 3.5 ? 2 * mag : norm < 7.5 ? 5 * mag : 10 * mag
   const start = Math.ceil(min / step) * step
   const ticks: number[] = []
-  for (let t = start; t <= max + step * 0.01; t += step) ticks.push(Math.round(t))
+  // Keep fractional ticks (we now plot in millions) — display is cleaned by fmtMillions.
+  for (let t = start; t <= max + step * 0.01; t += step) ticks.push(t)
   return ticks
 }
 
-function fmtTick(n: number): string {
-  const abs = Math.abs(n)
-  const sign = n < 0 ? '−' : n > 0 ? '+' : ''
-  if (abs === 0) return '$0'
-  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1)}M`
-  if (abs >= 1_000) return `${sign}$${Math.round(abs / 1_000)}k`
-  return `${sign}$${abs}`
+// Plain decimal millions: 0, 0.5, 1, 2.5 … ($ millions lives in the axis titles, per the image).
+function fmtMillions(n: number): string {
+  const r = Math.round(n * 100) / 100  // clean float-accumulation noise to 2dp
+  if (r === 0) return '0'
+  const sign = r < 0 ? '−' : ''
+  const s = Math.abs(r).toFixed(2).replace(/\.?0+$/, '')
+  return sign + s
 }
 
 export function SurplusScatterSVG({
   points,
+  frontier,
   svgRef,
 }: {
   points: ScatterPoint[]
+  /** Optional Pareto frontier (two points, in MILLIONS: x = WineMaster, y = Home Base).
+   *  When present, a dark-red line connects them; absent → unchanged (Hawks/Vivo unaffected). */
+  frontier?: FrontierPoint[]
   svgRef: React.RefObject<SVGSVGElement | null>
 }) {
   if (points.length === 0) {
@@ -55,18 +68,23 @@ export function SurplusScatterSVG({
     )
   }
 
-  const allX = points.map(p => p.x)
-  const allY = points.map(p => p.y)
+  // Convert dots from dollars → millions at the plot boundary; frontier is already in millions.
+  const mpts = points.map(p => ({ ...p, x: p.x / TO_M, y: p.y / TO_M }))
+  const fr = frontier ?? []
+
+  // Auto-scale over BOTH the dots and the frontier endpoints so the line isn't clipped.
+  const allX = [...mpts.map(p => p.x), ...fr.map(p => p.x)]
+  const allY = [...mpts.map(p => p.y), ...fr.map(p => p.y)]
   const rawMinX = Math.min(...allX), rawMaxX = Math.max(...allX)
   const rawMinY = Math.min(...allY), rawMaxY = Math.max(...allY)
 
   // Pad axes so points don't sit on the edge; always include 0 for the zero-line.
-  const padX = (rawMaxX - rawMinX) * 0.12 || Math.abs(rawMinX) * 0.15 || 200_000
-  const padY = (rawMaxY - rawMinY) * 0.12 || Math.abs(rawMinY) * 0.15 || 200_000
-  const axisMinX = Math.min(rawMinX - padX, -50_000)
-  const axisMaxX = Math.max(rawMaxX + padX, 50_000)
-  const axisMinY = Math.min(rawMinY - padY, -50_000)
-  const axisMaxY = Math.max(rawMaxY + padY, 50_000)
+  const padX = (rawMaxX - rawMinX) * 0.12 || Math.abs(rawMinX) * 0.15 || 0.2
+  const padY = (rawMaxY - rawMinY) * 0.12 || Math.abs(rawMinY) * 0.15 || 0.2
+  const axisMinX = Math.min(rawMinX - padX, -0.05)
+  const axisMaxX = Math.max(rawMaxX + padX, 0.05)
+  const axisMinY = Math.min(rawMinY - padY, -0.05)
+  const axisMaxY = Math.max(rawMaxY + padY, 0.05)
 
   const spanX = axisMaxX - axisMinX
   const spanY = axisMaxY - axisMinY
@@ -116,7 +134,7 @@ export function SurplusScatterSVG({
           <g key={t}>
             <line x1={SM.left} y1={y} x2={SM.left + SPW} y2={y} stroke="#e5e7eb" strokeWidth={1} />
             <text x={SM.left - 8} y={y + 4} textAnchor="end" fontSize={11} fill="#9ca3af" fontFamily="sans-serif">
-              {fmtTick(t)}
+              {fmtMillions(t)}
             </text>
           </g>
         )
@@ -130,7 +148,7 @@ export function SurplusScatterSVG({
           <g key={t}>
             <line x1={x} y1={SM.top} x2={x} y2={SM.top + SPH} stroke="#e5e7eb" strokeWidth={1} />
             <text x={x} y={SM.top + SPH + 17} textAnchor="middle" fontSize={11} fill="#6b7280" fontFamily="sans-serif">
-              {fmtTick(t)}
+              {fmtMillions(t)}
             </text>
           </g>
         )
@@ -152,29 +170,50 @@ export function SurplusScatterSVG({
         />
       )}
 
+      {/* Pareto frontier line (dark red) — same px-scale as the dots; drawn under the dots. */}
+      {fr.length >= 2 && (
+        <g clipPath="url(#wm-scatter-clip)">
+          <line
+            x1={xPx(fr[0].x)} y1={yPx(fr[0].y)}
+            x2={xPx(fr[1].x)} y2={yPx(fr[1].y)}
+            stroke="#991b1b" strokeWidth={3}
+          />
+          {fr.map((p, i) => (
+            <circle key={i} cx={xPx(p.x)} cy={yPx(p.y)} r={5} fill="#991b1b" />
+          ))}
+          <text
+            x={(xPx(fr[0].x) + xPx(fr[1].x)) / 2 + 14}
+            y={(yPx(fr[0].y) + yPx(fr[1].y)) / 2 - 8}
+            fontSize={12} fontWeight={600} fill="#991b1b" fontFamily="sans-serif"
+          >
+            Pareto frontier
+          </text>
+        </g>
+      )}
+
       {/* Axis lines */}
       <line x1={SM.left} y1={SM.top} x2={SM.left} y2={SM.top + SPH} stroke="#374151" strokeWidth={2} />
       <line x1={SM.left} y1={SM.top + SPH} x2={SM.left + SPW} y2={SM.top + SPH} stroke="#374151" strokeWidth={2} />
 
-      {/* Y-axis title (rotated) */}
+      {/* Y-axis title (rotated) — Home Base */}
       <text
         x={SM.left - 82} y={SM.top + SPH / 2}
         transform={`rotate(-90, ${SM.left - 82}, ${SM.top + SPH / 2})`}
         textAnchor="middle" fontSize={13} fill="#374151" fontFamily="sans-serif"
       >
-        Winemaster surplus ($)
+        HomeBase net gain ($ millions)
       </text>
 
-      {/* X-axis title */}
+      {/* X-axis title — WineMaster */}
       <text
         x={SM.left + SPW / 2} y={SM.top + SPH + 48}
         textAnchor="middle" fontSize={13} fill="#374151" fontFamily="sans-serif"
       >
-        Home Base surplus ($)
+        WineMaster net gain ($ millions)
       </text>
 
       {/* Data points + labels */}
-      {points.map((p, i) => {
+      {mpts.map((p, i) => {
         const cx = xPx(p.x)
         const cy = yPx(p.y)
         // Offset label above the dot; flip below if too close to top edge.
