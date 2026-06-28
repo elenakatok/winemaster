@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@mygames/game-engine": "git+https://github.com/elenakatok/game-engine.git#v0.3.0",
+    "@mygames/game-engine": "git+https://github.com/elenakatok/game-engine.git#v0.4.0",
     "@mygames/game-ui": "file:../../../packages/game-ui",
     "firebase": "^12.13.0",
     "react": "^19.2.6",

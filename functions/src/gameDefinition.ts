@@ -17,6 +17,7 @@ export const winemasterSchema: OutcomeSchema = [
   { key: 'vesting',    type: 'enum',    options: ['Immediate', 'Pro Rata', 'End of Second Year'] },
   { key: 'board_seat', type: 'boolean' },
   { key: 'liability',  type: 'integer', min: 0,   max: 1000000 },
+  { key: 'notes',      type: 'text' },  // optional free-text; blank = '', excluded from scoring
 ]
 
 // ── Score sense ───────────────────────────────────────────────────────────────

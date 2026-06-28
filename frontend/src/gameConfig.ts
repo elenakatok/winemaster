@@ -16,6 +16,7 @@ export const winemasterSchema: OutcomeSchema = [
   { key: 'vesting',    type: 'enum',    options: ['Immediate', 'Pro Rata', 'End of Second Year'] },
   { key: 'board_seat', type: 'boolean' },
   { key: 'liability',  type: 'integer', min: 0,   max: 1_000_000 },
+  { key: 'notes',      type: 'text' },  // optional free-text; blank = '', excluded from scoring
 ]
 
 export const FIELD_LABELS: Readonly<Record<string, string>> = {
@@ -23,6 +24,7 @@ export const FIELD_LABELS: Readonly<Record<string, string>> = {
   vesting:    'Vesting',
   board_seat: 'Board seat',
   liability:  'Liability',
+  notes:      'Notes',
 }
 
 export function formatField(field: OutcomeField, value: unknown): string {
