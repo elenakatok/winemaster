@@ -14,6 +14,8 @@ import {
   type AiTextRow,
 } from '@mygames/game-ui'
 import { SurplusScatterSVG, type ScatterPoint } from '../components/SurplusScatterSVG'
+import { SchemaField, parseForm, type FormValues } from '../phases/OutcomeReporting'
+import { type OutcomeSchema } from '../gameConfig'
 
 // Pareto frontier endpoints (already in MILLIONS; x = WineMaster, y = Home Base) — from the target image.
 const WM_FRONTIER: { x: number; y: number }[] = [
@@ -27,6 +29,7 @@ type ReportRow = {
   participant_id: string
   display_name: string
   group_number: number | null
+  group_id: string | null
   role: string
   shares: number | null
   vesting: string | null
@@ -52,7 +55,7 @@ const vestingRank = (v: string | null) => v == null ? Infinity : (VESTING_ORDER[
 
 // ── Contract-outcome table columns ───────────────────────────────────────────
 
-type SortKey = 'name' | 'group' | 'role' | 'shares' | 'vesting' | 'board_seat' | 'liability' | 'value_or_cost' | 'raw_score' | 'notes'
+type SortKey = 'name' | 'group' | 'role' | 'shares' | 'vesting' | 'board_seat' | 'liability' | 'value_or_cost' | 'raw_score' | 'notes' | 'edit'
 
 const ROLE_LABELS: Record<string, string> = {
   winemaster: 'Winemaster',
@@ -190,6 +193,7 @@ export default function Reports() {
   // ── Data load ──────────────────────────────────────────────────────────────
   const [rows,      setRows]      = useState<ReportRow[] | null>(null)
   const [questions, setQuestions] = useState<QuestionMeta[]>([])
+  const [schema,    setSchema]    = useState<OutcomeSchema | null>(null)
   const [loading,   setLoading]   = useState(false)
   const [error,     setError]     = useState<string | null>(null)
 
@@ -197,16 +201,67 @@ export default function Reports() {
     if (!sessionReady) return
     setLoading(true)
     setError(null)
-    const fn = httpsCallable<object, { ok: boolean; rows: ReportRow[]; questions: QuestionMeta[] }>(functions, 'getReportData')
+    const fn = httpsCallable<object, { ok: boolean; rows: ReportRow[]; questions: QuestionMeta[]; schema: OutcomeSchema }>(functions, 'getReportData')
     fn({}).then(r => {
       setRows(r.data.rows)
       setQuestions(r.data.questions)
+      setSchema(r.data.schema)
       setLoading(false)
     }).catch((err: unknown) => {
       setError(err instanceof Error ? err.message : 'Failed to load report data.')
       setLoading(false)
     })
   }, [sessionReady])
+
+  // ── Inline group-contract editor (report-only: writes the group contract and
+  //    recomputes each member's raw_score via updateGroupContract; never z-scores) ──
+  const [editing,    setEditing]    = useState<{ groupId: string; groupNumber: number | null } | null>(null)
+  const [formValues, setFormValues] = useState<FormValues>({})
+  const [dealReached, setDealReached] = useState(true)
+  const [saving,     setSaving]     = useState(false)
+  const [editError,  setEditError]  = useState<string | null>(null)
+
+  const openEditor = (row: ReportRow) => {
+    if (!row.group_id || !schema) return
+    // A deal is present iff any non-text contract field has a value (no-deal → all null).
+    const hasDeal = schema.some(f => f.type !== 'text' && (row as Record<string, unknown>)[f.key] != null)
+    const vals: FormValues = {}
+    for (const f of schema) {
+      const raw = (row as Record<string, unknown>)[f.key]
+      vals[f.key] = f.type === 'boolean' ? Boolean(raw) : (raw == null ? '' : String(raw))
+    }
+    setFormValues(vals)
+    setDealReached(hasDeal)
+    setEditError(null)
+    setEditing({ groupId: row.group_id, groupNumber: row.group_number })
+  }
+
+  const saveEditor = async () => {
+    if (!editing || !schema) return
+    let outcome: Record<string, unknown> | null = null
+    if (dealReached) {
+      const parsed = parseForm(formValues, schema)
+      if (!parsed.ok) { setEditError(parsed.error); return }
+      outcome = parsed.outcome
+    }
+    setSaving(true)
+    setEditError(null)
+    try {
+      const fn = httpsCallable<
+        { groupId: string; agreement_reached: boolean; outcome: Record<string, unknown> | null },
+        { ok: boolean; rows: ReportRow[] }
+      >(functions, 'updateGroupContract')
+      const res = await fn({ groupId: editing.groupId, agreement_reached: dealReached, outcome })
+      const updated = res.data.rows
+      // Refresh the whole group's rows at once; other groups untouched.
+      setRows(prev => prev ? prev.map(r => updated.find(u => u.participant_id === r.participant_id) ?? r) : prev)
+      setEditing(null)
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : 'Failed to save contract.')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   // ── Scatter data — derived from rows, no extra fetch ───────────────────────
   const scatterSvgRef = useRef<SVGSVGElement>(null)
@@ -344,13 +399,86 @@ export default function Reports() {
             <div style={{ overflowX: 'auto' }}>
               <SortableTable<ReportRow, SortKey>
                 rows={rows ?? []}
-                columns={COLUMNS}
+                columns={[
+                  ...COLUMNS,
+                  {
+                    key: 'edit', label: '', headerStyle: { cursor: 'default' },
+                    render: r => (
+                      <button
+                        onClick={() => openEditor(r)}
+                        disabled={!r.group_id || !schema}
+                        style={{ background: 'none', border: '1px solid #ccc', borderRadius: 4, padding: '0.2rem 0.6rem', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        Edit
+                      </button>
+                    ),
+                    compare: () => 0,
+                  },
+                ]}
                 getRowKey={r => r.participant_id}
                 initialSortKey="group"
                 roleLabels={ROLE_LABELS}
                 getRowRole={r => r.role}
                 emptyMessage="No finalized participants yet."
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Inline group-contract editor ── */}
+      {editing && schema && (
+        <div
+          onClick={() => !saving && setEditing(null)}
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
+            padding: '3rem 1rem', zIndex: 1100, overflowY: 'auto',
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: '#fff', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', width: '100%', maxWidth: 460, padding: '1.25rem 1.5rem' }}
+          >
+            <h3 style={{ margin: '0 0 1rem', fontSize: '1rem', fontWeight: 600 }}>
+              Edit group {editing.groupNumber ?? '—'} contract
+            </h3>
+            <p style={{ margin: '0 0 1rem', fontSize: '0.85rem', color: '#666' }}>
+              Applies to the whole group; all members' raw scores recompute.
+            </p>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontWeight: 600 }}>
+              <input
+                type="checkbox"
+                checked={dealReached}
+                onChange={e => { setDealReached(e.target.checked); setEditError(null) }}
+                disabled={saving}
+                style={{ width: 18, height: 18 }}
+              />
+              Deal reached {dealReached ? '' : '— group walked away (no deal)'}
+            </label>
+
+            <div style={{ opacity: dealReached ? 1 : 0.5 }}>
+              {schema.map(field => (
+                <SchemaField
+                  key={field.key}
+                  field={field}
+                  value={formValues[field.key] ?? (field.type === 'boolean' ? false : '')}
+                  onChange={v => { setFormValues(prev => ({ ...prev, [field.key]: v })); setEditError(null) }}
+                  disabled={saving || !dealReached}
+                />
+              ))}
+            </div>
+
+            {editError && <p style={{ color: '#c00', margin: '0 0 0.75rem', fontSize: '0.9rem' }}>{editError}</p>}
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.5rem' }}>
+              <button onClick={saveEditor} disabled={saving} style={{ padding: '0.4rem 1rem', cursor: 'pointer' }}>
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={() => setEditing(null)} disabled={saving} style={{ padding: '0.4rem 1rem', background: 'none', border: '1px solid #ccc', borderRadius: 4, cursor: 'pointer' }}>
+                Cancel
+              </button>
             </div>
           </div>
         </div>

@@ -61,6 +61,7 @@ export const submitKnowledgeCheck               = makeSubmitKnowledgeCheck(winem
 export const submitStaticKnowledgeCheckQuestion = makeSubmitStaticKnowledgeCheckQuestion(winemasterGameDef)
 export const getInfoUrls                        = makeGetInfoUrls(winemasterGameDef)
 export { getReportData } from './getReportData'
+export { updateGroupContract } from './updateGroupContract'
 
 // ── Non-game onRequest endpoints (kept as-is; not converted) ──────────────────
 
