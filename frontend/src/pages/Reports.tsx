@@ -73,7 +73,7 @@ function fmtSigned(n: number | null): string {
 
 const COLUMNS: readonly SortableColumn<ReportRow, SortKey>[] = [
   {
-    key: 'name', label: 'Name', headerStyle: { minWidth: 140 },
+    key: 'name', label: 'Name', headerStyle: { minWidth: 140 }, sticky: 'left',
     render: r => r.display_name,
     compare: (a, b) => a.display_name.localeCompare(b.display_name),
   },
@@ -384,7 +384,11 @@ export default function Reports() {
             onClick={e => e.stopPropagation()}
             style={{
               background: '#fff', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
-              width: '100%', maxWidth: 1100, padding: '1.25rem 1.5rem',
+              // Viewport-bounded so the wide table scrolls INSIDE the modal instead of
+              // stretching it: minWidth:0 lets the flex item shrink below content width.
+              width: '100%', maxWidth: 'min(1100px, calc(100vw - 2rem))', minWidth: 0,
+              boxSizing: 'border-box', maxHeight: 'calc(100vh - 6rem)', overflowY: 'auto',
+              padding: '1.25rem 1.5rem',
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -396,13 +400,13 @@ export default function Reports() {
                 ✕
               </button>
             </div>
-            <div style={{ overflowX: 'auto' }}>
+            <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 14rem)', border: '1px solid #ddd', borderRadius: 6 }}>
               <SortableTable<ReportRow, SortKey>
                 rows={rows ?? []}
                 columns={[
                   ...COLUMNS,
                   {
-                    key: 'edit', label: '', headerStyle: { cursor: 'default' },
+                    key: 'edit', label: '', headerStyle: { cursor: 'default' }, sticky: 'right',
                     render: r => (
                       <button
                         onClick={() => openEditor(r)}
