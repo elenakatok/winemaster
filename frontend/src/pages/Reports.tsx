@@ -124,11 +124,11 @@ const COLUMNS: readonly SortableColumn<ReportRow, SortKey>[] = [
     compare: (a, b) => (a.raw_score ?? 0) - (b.raw_score ?? 0),
   },
   {
-    key: 'notes', label: 'Notes', headerStyle: { minWidth: 220 },
+    key: 'notes', label: 'Notes', headerStyle: { minWidth: 80 },
     nullsLast: true, isNull: r => !r.notes || !r.notes.trim(),
     tiebreak: (a, b) => a.display_name.localeCompare(b.display_name),
     render: r => (r.notes && r.notes.trim())
-      ? <span style={{ whiteSpace: 'pre-wrap', display: 'inline-block', maxWidth: 360 }}>{r.notes}</span>
+      ? <span style={{ whiteSpace: 'pre-wrap', display: 'inline-block', maxWidth: 220, overflowWrap: 'anywhere' }}>{r.notes}</span>
       : '—',
     compare: (a, b) => (a.notes ?? '').localeCompare(b.notes ?? ''),
   },
@@ -424,6 +424,7 @@ export default function Reports() {
                 roleLabels={ROLE_LABELS}
                 getRowRole={r => r.role}
                 emptyMessage="No finalized participants yet."
+                wrapHeaders
               />
             </div>
           </div>
