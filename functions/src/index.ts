@@ -11,6 +11,7 @@ import {
   makeSyncRoster,
   makeTriggerMatching,
   makeStartNegotiation,
+  makeGetGroupMemberEmails,
   makeSubmitLeadOutcome,
   makeSubmitConfirmation,
   makeSubmitInstructorOutcome,
@@ -48,6 +49,7 @@ export const getRoster              = makeGetRoster(winemasterGameDef)
 export const syncRoster             = makeSyncRoster(winemasterGameDef)
 export const triggerMatching            = makeTriggerMatching(winemasterGameDef)
 export const startNegotiation           = makeStartNegotiation(winemasterGameDef)
+export const getGroupMemberEmails      = makeGetGroupMemberEmails(winemasterGameDef)
 export const submitLeadOutcome          = makeSubmitLeadOutcome(winemasterGameDef)
 export const submitConfirmation         = makeSubmitConfirmation(winemasterGameDef)
 export const submitInstructorOutcome    = makeSubmitInstructorOutcome(winemasterGameDef)
