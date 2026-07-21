@@ -1,5 +1,7 @@
 import type { Outcome, OutcomeSchema, RoleConfig } from '@mygames/game-engine'
 import type { GameDefinition } from '@mygames/game-server'
+// Shared latecomer joinability (Latecomer_Placement_Spec_v1 §3.1) — one predicate for all five negotiation games.
+import { negotiationIsJoinable } from '@mygames/game-server'
 
 // ── Role config ───────────────────────────────────────────────────────────────
 
@@ -117,6 +119,9 @@ export const winemasterGameDef: GameDefinition = {
   reservations: { winemaster: 7_200_000, home_base: 8_400_000 },
   corsOrigins: ['https://winemaster.mygames.live'],
   classroom: { callbackSecretId: 'CLASSROOM_CALLBACK_SECRET' },
+  // Latecomer auto-placement (spec §3.1). Joinable = group not yet negotiating.
+  // No onPlace: negotiation placement is group_id only (audit 0b).
+  isJoinable: negotiationIsJoinable,
   // perRoleCap omitted → factory uses eligible.length (no cap, place every extra).
   // deadlockThreshold omitted → factory defaults to 5 (Winemaster's value).
 

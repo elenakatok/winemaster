@@ -373,6 +373,7 @@ export default function Play() {
           db={db}
           rtdb={rtdb}
           onMatched={(groupId) => setPhase({ name: 'group-reveal', groupId })}
+          classroomUrl={CLASSROOM_URL}
         />
       )}
 
