@@ -11,6 +11,7 @@ import {
   GameHeader,
   WaitingRoom,
   GroupReveal,
+  GroupMembersPanel,
   OffPlatformHolding,
   Results,
   typography,
@@ -391,24 +392,34 @@ export default function Play() {
       )}
 
       {phase.name === 'off-platform' && (
-        <OffPlatformHolding
-          groupId={phase.groupId}
-          participantId={participantId}
-          gameInstanceId={gameInstanceId}
-          db={db}
-          onReportOutcome={(isLead) => setPhase({ name: 'outcome-reporting', groupId: phase.groupId, isLead })}
-        />
+        <>
+          <div style={{ maxWidth: layout.contentWidth, margin: '0 auto', paddingTop: layout.pagePad, paddingLeft: layout.pagePad, paddingRight: layout.pagePad }}>
+            <GroupMembersPanel groupId={phase.groupId} participantId={participantId} gameInstanceId={gameInstanceId} roleConfig={winemasterConfig} db={db} rtdb={rtdb} functions={functions} />
+          </div>
+          <OffPlatformHolding
+            groupId={phase.groupId}
+            participantId={participantId}
+            gameInstanceId={gameInstanceId}
+            db={db}
+            onReportOutcome={(isLead) => setPhase({ name: 'outcome-reporting', groupId: phase.groupId, isLead })}
+          />
+        </>
       )}
 
       {phase.name === 'outcome-reporting' && (
-        <OutcomeReporting
-          groupId={phase.groupId}
-          participantId={participantId}
-          gameInstanceId={gameInstanceId}
-          isLead={phase.isLead}
-          args={{}}
-          onComplete={() => setPhase({ name: 'results', groupId: phase.groupId })}
-        />
+        <>
+          <div style={{ maxWidth: layout.contentWidth, margin: '0 auto', paddingTop: layout.pagePad, paddingLeft: layout.pagePad, paddingRight: layout.pagePad }}>
+            <GroupMembersPanel groupId={phase.groupId} participantId={participantId} gameInstanceId={gameInstanceId} roleConfig={winemasterConfig} db={db} rtdb={rtdb} functions={functions} />
+          </div>
+          <OutcomeReporting
+            groupId={phase.groupId}
+            participantId={participantId}
+            gameInstanceId={gameInstanceId}
+            isLead={phase.isLead}
+            args={{}}
+            onComplete={() => setPhase({ name: 'results', groupId: phase.groupId })}
+          />
+        </>
       )}
 
       {phase.name === 'results' && (
