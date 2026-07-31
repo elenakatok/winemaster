@@ -97,7 +97,7 @@ export default function InstructorDashboard() {
       settingsRoute="/settings"
       reportsRoute="/reports"
       scoreAndRecord={{ callableName: 'scoreAndRecord', label: 'Score & Record' }}
-      underHeadline={<GroupsControlStrip functions={functions} roleLabels={roleLabels} />}
+      underHeadline={<GroupsControlStrip functions={functions} auth={auth} roleLabels={roleLabels} />}
     />
   )
 }

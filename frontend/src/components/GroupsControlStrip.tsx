@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { httpsCallable, type Functions } from 'firebase/functions'
+import { onAuthStateChanged, type Auth } from 'firebase/auth'
 import {
   GroupsPanel,
   MoveMemberControl,
@@ -53,15 +54,27 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function GroupsControlStrip({
   functions,
+  auth,
   roleLabels,
 }: {
   functions: Functions
+  auth: Auth
   roleLabels: Record<string, string>
 }) {
   const [participants, setParticipants] = useState<SharedParticipant[]>([])
   const [groups, setGroups] = useState<SharedGroup[]>([])
   const [error, setError] = useState<string | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // ── Auth-readiness gate ──────────────────────────────────────────────────────
+  // getRoster is instructor-authenticated: the Firebase SDK only attaches the Bearer token
+  // once the instructor session is signed in. Polling before that sends a tokenless request,
+  // which the server correctly rejects with 400 "Missing token". So wait for auth exactly as
+  // the shared dashboard gates its own poll (on the same session becoming ready). Gating on
+  // `auth.currentUser` (via onAuthStateChanged) keeps this PORTABLE — it depends only on the
+  // passed Auth instance, so the gate travels with the panel when it is reused in other games.
+  const [ready, setReady] = useState(() => auth.currentUser != null)
+  useEffect(() => onAuthStateChanged(auth, user => setReady(user != null)), [auth])
 
   const load = useCallback(() => {
     const fn = httpsCallable<object, RosterResult>(functions, 'getRoster')
@@ -73,10 +86,11 @@ export function GroupsControlStrip({
   }, [functions])
 
   useEffect(() => {
+    if (!ready) return // don't poll until the instructor session exists — no tokenless getRoster calls
     load()
     timer.current = setInterval(load, POLL_MS)
     return () => { if (timer.current) clearInterval(timer.current) }
-  }, [load])
+  }, [ready, load])
 
   // move / ungroup / new-group — one callable, target_group_id carries the intent:
   //   '' → ungroup,  'new' → new group,  else → a group id. (moveSeat's own contract.)
