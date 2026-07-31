@@ -3,6 +3,7 @@ import { httpsCallable } from 'firebase/functions'
 import { InstructorDashboard as SharedDashboard, type DeadlockResolutionProps, type OutcomeFields } from '@mygames/game-ui'
 import { auth, functions, rtdb } from '../firebase'
 import { winemasterConfig } from '../gameConfig'
+import { GroupsControlStrip } from '../components/GroupsControlStrip'
 
 // ── Role labels from game config ──────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ export default function InstructorDashboard() {
       settingsRoute="/settings"
       reportsRoute="/reports"
       scoreAndRecord={{ callableName: 'scoreAndRecord', label: 'Score & Record' }}
+      underHeadline={<GroupsControlStrip functions={functions} roleLabels={roleLabels} />}
     />
   )
 }
